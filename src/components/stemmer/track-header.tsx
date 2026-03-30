@@ -1,3 +1,4 @@
+import { useAtomValue } from "jotai";
 import {
 	ChevronDown,
 	Download,
@@ -11,45 +12,57 @@ import type { ChangeEvent } from "react";
 import { Button } from "#/components/ui/button";
 import { formatTime } from "#/lib/stemmer-audio";
 import { STEM_OUTPUTS, type StemOutputId } from "#/lib/stemmer-models";
-import { type PlaybackTimeStore, usePlaybackTime } from "./playback-time-store";
-import type { TrackRecord } from "./types";
+import {
+	canExportAtom,
+	isDecodingAtom,
+	isExportingAtom,
+	playbackTimeAtom,
+	trackAtom,
+} from "./stemmer-atoms";
+import { useStemmerActions } from "./stemmer-provider";
 
 const STEM_ICONS: Record<StemOutputId, typeof Mic> = {
 	vocals: Mic,
 	instrumental: Music4,
 };
 
-interface Props {
-	canExport: boolean;
-	isDecoding: boolean;
-	isExporting: boolean;
-	onExport: () => void;
-	onExportStem: (stemId: StemOutputId) => void;
-	onImport: (e: ChangeEvent<HTMLInputElement>) => void;
-	playbackTimeStore: PlaybackTimeStore;
-	track: TrackRecord;
-}
+export default function TrackHeader() {
+	const track = useAtomValue(trackAtom);
+	const canExport = useAtomValue(canExportAtom);
+	const isDecoding = useAtomValue(isDecodingAtom);
+	const isExporting = useAtomValue(isExportingAtom);
+	const { exportMix, exportStem, importFile } = useStemmerActions();
 
-function TrackHeader({
-	canExport,
-	track,
-	isDecoding,
-	isExporting,
-	playbackTimeStore,
-	onImport,
-	onExport,
-	onExportStem,
-}: Props) {
+	if (!track) {
+		return null;
+	}
+
 	const disabled = !canExport || isExporting;
+
+	async function handleImport(event: ChangeEvent<HTMLInputElement>) {
+		const file = event.target.files?.[0];
+		if (!file) {
+			return;
+		}
+
+		await importFile(file);
+		event.target.value = "";
+	}
+
+	function handleExportMix() {
+		exportMix().catch(() => undefined);
+	}
+
+	function handleExportStem(stemId: StemOutputId) {
+		exportStem(stemId);
+	}
 
 	return (
 		<div className="flex shrink-0 items-center gap-3 border-border/60 border-b bg-card px-4 py-2.5 shadow-[0_1px_4px_rgba(0,0,0,0.1)]">
-			{/* Track icon */}
 			<div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
 				<Music className="size-4 text-primary" />
 			</div>
 
-			{/* Track info */}
 			<div className="min-w-0">
 				<p className="truncate font-semibold text-foreground text-sm leading-tight">
 					{track.name}
@@ -59,16 +72,10 @@ function TrackHeader({
 				</p>
 			</div>
 
-			{/* Current time */}
-			<TrackTimeDisplay
-				duration={track.duration}
-				playbackTimeStore={playbackTimeStore}
-			/>
+			<TrackTimeDisplay duration={track.duration} />
 
-			{/* Spacer */}
 			<div className="flex-1" />
 
-			{/* Change track */}
 			<Button asChild className="shrink-0" size="sm" variant="ghost">
 				<label className="cursor-pointer">
 					<RefreshCw className="size-3.5" />
@@ -76,14 +83,13 @@ function TrackHeader({
 						accept="audio/*"
 						className="hidden"
 						disabled={isDecoding}
-						onChange={onImport}
+						onChange={handleImport}
 						type="file"
 					/>
 					{isDecoding ? "Reading..." : "Change"}
 				</label>
 			</Button>
 
-			{/* Download dropdown */}
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger asChild>
 					<Button
@@ -104,14 +110,13 @@ function TrackHeader({
 						className="fade-in-0 zoom-in-95 z-50 min-w-[180px] animate-in overflow-hidden rounded-lg border border-border bg-card p-1 shadow-black/20 shadow-lg"
 						sideOffset={4}
 					>
-						{/* Individual stems */}
 						{STEM_OUTPUTS.map((stem) => {
 							const Icon = STEM_ICONS[stem.id];
 							return (
 								<DropdownMenu.Item
 									className="flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-foreground text-sm outline-none transition-colors hover:bg-white/5 focus:bg-white/5"
 									key={stem.id}
-									onClick={() => onExportStem(stem.id)}
+									onClick={() => handleExportStem(stem.id)}
 								>
 									<Icon className="size-3.5" style={{ color: stem.accent }} />
 									{stem.label}
@@ -121,10 +126,9 @@ function TrackHeader({
 
 						<DropdownMenu.Separator className="mx-1 my-1 h-px bg-border/60" />
 
-						{/* Full mix */}
 						<DropdownMenu.Item
 							className="flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-foreground text-sm outline-none transition-colors hover:bg-white/5 focus:bg-white/5"
-							onClick={onExport}
+							onClick={handleExportMix}
 						>
 							<Download className="size-3.5 text-muted-foreground" />
 							Full mix
@@ -136,14 +140,8 @@ function TrackHeader({
 	);
 }
 
-function TrackTimeDisplay({
-	duration,
-	playbackTimeStore,
-}: {
-	duration: number;
-	playbackTimeStore: PlaybackTimeStore;
-}) {
-	const currentTime = usePlaybackTime(playbackTimeStore);
+function TrackTimeDisplay({ duration }: { duration: number }) {
+	const currentTime = useAtomValue(playbackTimeAtom);
 
 	return (
 		<span className="shrink-0 rounded-md bg-background px-2.5 py-1 font-mono text-muted-foreground text-xs tabular-nums">
@@ -151,5 +149,3 @@ function TrackTimeDisplay({
 		</span>
 	);
 }
-
-export default TrackHeader;
