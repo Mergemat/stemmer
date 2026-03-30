@@ -22,7 +22,6 @@ import {
 import { STEM_OUTPUTS, type StemOutputId } from "#/lib/stemmer-models";
 import { createPlaybackTimeStore } from "./playback-time-store";
 import { createSeparationJobStore } from "./separation-job-store";
-import StemSidebar from "./stem-sidebar";
 import TrackHeader from "./track-header";
 import Transport from "./transport";
 import {
@@ -565,20 +564,17 @@ export default function StemmerWorkbench() {
 				isExporting={isExporting}
 				onExport={exportMix}
 				onImport={handleImport}
-				onSeek={seekTo}
 				playbackTimeStore={playbackTimeStoreRef.current}
 				track={track}
 			/>
 
 			<div className="flex min-h-0 flex-1">
-				<StemSidebar
+				<WaveformLanes
 					disabled={jobPhase !== "complete"}
 					onPatchStem={patchStem}
-					stemState={stemState}
-				/>
-				<WaveformLanes
 					onSeek={seekTo}
 					playbackTimeStore={playbackTimeStoreRef.current}
+					stemState={stemState}
 					track={track}
 				/>
 			</div>

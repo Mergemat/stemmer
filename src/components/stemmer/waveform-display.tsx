@@ -72,7 +72,7 @@ function WaveformDisplay({
 				<path
 					d={waveformPath}
 					fill="none"
-					stroke="rgba(255,255,255,0.12)"
+					stroke="rgba(255,255,255,0.22)"
 					strokeLinecap="round"
 					strokeLinejoin="round"
 					strokeWidth={strokeWidth}
@@ -88,10 +88,16 @@ function WaveformDisplay({
 				/>
 			</svg>
 
+			{/* Playhead */}
 			<div
 				aria-hidden="true"
-				className="absolute inset-y-0 w-0.5 bg-white/90 shadow-[0_0_0_1px_rgba(255,255,255,0.08)]"
-				style={{ left: `${playhead * 100}%`, transform: "translateX(-50%)" }}
+				className="absolute inset-y-0 w-px"
+				style={{
+					left: `${playhead * 100}%`,
+					transform: "translateX(-50%)",
+					backgroundColor: "rgba(255,255,255,0.9)",
+					boxShadow: `0 0 6px 1px rgba(255,255,255,0.25), 0 0 2px 0 ${accent}40`,
+				}}
 			/>
 		</div>
 	);
