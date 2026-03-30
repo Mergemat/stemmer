@@ -14,6 +14,19 @@ export const Route = createFileRoute("/api/process")({
 	},
 });
 
+type ParsedProcessRequest =
+	| {
+			file: File;
+			fingerprint?: string;
+			mode: "stem";
+			presetId: string;
+	  }
+	| {
+			file: File;
+			mode: "repair";
+			presetId: string;
+	  };
+
 function createNdjsonStream(
 	run: (send: (event: ProcessStreamEvent) => void) => Promise<void> | void
 ) {
@@ -85,13 +98,13 @@ async function handleProcessPost(request: Request) {
 }
 
 function wantsProcessStream(request: Request) {
-	return (
+	return Boolean(
 		request.headers.get("x-process-stream") === "1" ||
-		request.headers.get("accept")?.includes("application/x-ndjson")
+			request.headers.get("accept")?.includes("application/x-ndjson")
 	);
 }
 
-function parseProcessRequest(formData: FormData) {
+function parseProcessRequest(formData: FormData): ParsedProcessRequest | null {
 	const mode = formData.get("mode");
 	const presetId = formData.get("presetId");
 	const file = formData.get("file");
@@ -106,7 +119,16 @@ function parseProcessRequest(formData: FormData) {
 		return null;
 	}
 
-	return { file, fingerprint: fingerprint ?? undefined, mode, presetId };
+	if (mode === "stem") {
+		return {
+			file,
+			fingerprint: fingerprint ?? undefined,
+			mode,
+			presetId,
+		};
+	}
+
+	return { file, mode, presetId };
 }
 
 async function handleStemRequest(
