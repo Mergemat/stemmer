@@ -25,6 +25,7 @@ const PROJECT_ROOT = process.cwd();
 const RUNTIME_ROOT = path.join(PROJECT_ROOT, ".stemmer-runtime");
 const JOBS_ROOT = path.join(RUNTIME_ROOT, "jobs");
 const MODELS_ROOT = path.join(RUNTIME_ROOT, "models");
+const STEM_JOB_CACHE_FILE = path.join(RUNTIME_ROOT, "stem-cache.json");
 const AUDIO_SEPARATOR_BIN = path.join(
 	PROJECT_ROOT,
 	".venv/bin/audio-separator"
@@ -69,6 +70,17 @@ interface StemJobResult {
 	sourceFileName: string;
 }
 
+interface StemJobCacheEntry {
+	createdAt: string;
+	jobId: string;
+	outputs: Array<{
+		fileName: string;
+		id: "vocals" | "instrumental";
+		label: string;
+	}>;
+	sourceFileName: string;
+}
+
 interface RepairJobResult {
 	jobId: string;
 	modelsUsed: string[];
@@ -79,6 +91,7 @@ interface RepairJobResult {
 
 export async function runStemJob(args: {
 	file: File;
+	fingerprint?: string;
 	presetId: SeparationPresetId;
 	onProgress?: (update: ProcessProgressUpdate) => void;
 }) {
@@ -89,6 +102,15 @@ export async function runStemJob(args: {
 
 	const emitProgress = createProgressEmitter(args.onProgress);
 	emitProgress({ progress: 2, label: "Preparing source audio..." });
+
+	if (args.fingerprint) {
+		emitProgress({ progress: 4, label: "Checking cached stems..." });
+		const cachedJob = await readCachedStemJob(args.fingerprint, args.presetId);
+		if (cachedJob) {
+			emitProgress({ progress: 96, label: "Loaded cached stems." });
+			return cachedJob;
+		}
+	}
 
 	const job = await createJobDir();
 	const inputPath = path.join(job.dir, sanitizeFileName(args.file.name));
@@ -126,11 +148,17 @@ export async function runStemJob(args: {
 	});
 
 	emitProgress({ progress: 96, label: "Stem files ready." });
-	return {
+	const result = {
 		jobId: job.id,
 		sourceFileName: path.basename(inputPath),
 		outputs,
 	} satisfies StemJobResult;
+
+	if (args.fingerprint) {
+		await persistCachedStemJob(args.fingerprint, args.presetId, result);
+	}
+
+	return result;
 }
 
 export async function runRepairJob(args: {
@@ -238,14 +266,106 @@ export async function readJobFile(jobId: string, fileName: string) {
 }
 
 async function createJobDir() {
-	await mkdir(JOBS_ROOT, { recursive: true });
-	await mkdir(MODELS_ROOT, { recursive: true });
+	await ensureRuntimeDirs();
 
 	const jobId = randomUUID();
 	const dir = path.join(JOBS_ROOT, jobId);
 	await mkdir(dir, { recursive: true });
 
 	return { id: jobId, dir };
+}
+
+async function ensureRuntimeDirs() {
+	await mkdir(RUNTIME_ROOT, { recursive: true });
+	await mkdir(JOBS_ROOT, { recursive: true });
+	await mkdir(MODELS_ROOT, { recursive: true });
+}
+
+async function readCachedStemJob(
+	fingerprint: string,
+	presetId: SeparationPresetId
+) {
+	const cache = await readStemJobCache();
+	const cacheKey = createStemJobCacheKey(fingerprint, presetId);
+	const cachedJob = cache[cacheKey];
+	if (!cachedJob) {
+		return null;
+	}
+
+	const isValid = await hasCachedStemFiles(cachedJob);
+	if (!isValid) {
+		delete cache[cacheKey];
+		await writeStemJobCache(cache);
+		return null;
+	}
+
+	return {
+		jobId: cachedJob.jobId,
+		sourceFileName: cachedJob.sourceFileName,
+		outputs: cachedJob.outputs.map((output) => ({
+			...output,
+			url: buildOutputUrl(cachedJob.jobId, output.fileName),
+		})),
+	} satisfies StemJobResult;
+}
+
+async function persistCachedStemJob(
+	fingerprint: string,
+	presetId: SeparationPresetId,
+	result: StemJobResult
+) {
+	const cache = await readStemJobCache();
+	cache[createStemJobCacheKey(fingerprint, presetId)] = {
+		createdAt: new Date().toISOString(),
+		jobId: result.jobId,
+		outputs: result.outputs.map((output) => ({
+			fileName: output.fileName,
+			id: output.id,
+			label: output.label,
+		})),
+		sourceFileName: result.sourceFileName,
+	};
+	await writeStemJobCache(cache);
+}
+
+function createStemJobCacheKey(
+	fingerprint: string,
+	presetId: SeparationPresetId
+) {
+	return `${presetId}:${fingerprint}`;
+}
+
+async function readStemJobCache() {
+	await ensureRuntimeDirs();
+
+	try {
+		const raw = await readFile(STEM_JOB_CACHE_FILE, "utf8");
+		return JSON.parse(raw) as Record<string, StemJobCacheEntry>;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
+			return {};
+		}
+
+		return {};
+	}
+}
+
+async function writeStemJobCache(cache: Record<string, StemJobCacheEntry>) {
+	await ensureRuntimeDirs();
+	await writeFile(STEM_JOB_CACHE_FILE, JSON.stringify(cache));
+}
+
+async function hasCachedStemFiles(entry: StemJobCacheEntry) {
+	try {
+		await Promise.all(
+			entry.outputs.map((output) =>
+				access(path.join(JOBS_ROOT, entry.jobId, output.fileName), constants.R_OK)
+			)
+		);
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 async function runAudioSeparator(args: {
