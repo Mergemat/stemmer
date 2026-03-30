@@ -1,7 +1,6 @@
 import { Upload } from "lucide-react";
 import {
 	type ChangeEvent,
-	type DragEvent,
 	startTransition,
 	useEffect,
 	useEffectEvent,
@@ -21,11 +20,11 @@ import {
 	type StemState,
 } from "#/lib/stemmer-audio";
 import { STEM_OUTPUTS, type StemOutputId } from "#/lib/stemmer-models";
-import { createPlaybackTimeStore } from "./playbackTimeStore";
-import { createSeparationJobStore } from "./separationJobStore";
-import StemSidebar from "./StemSidebar";
-import TrackHeader from "./TrackHeader";
-import Transport from "./Transport";
+import { createPlaybackTimeStore } from "./playback-time-store";
+import { createSeparationJobStore } from "./separation-job-store";
+import StemSidebar from "./stem-sidebar";
+import TrackHeader from "./track-header";
+import Transport from "./transport";
 import {
 	CACHE_KEY,
 	type CachedTrackRecord,
@@ -33,7 +32,7 @@ import {
 	type SeparationJob,
 	type TrackRecord,
 } from "./types";
-import WaveformLanes from "./WaveformLanes";
+import WaveformLanes from "./waveform-lanes";
 
 const INITIAL_JOB: SeparationJob = {
 	phase: "idle",
@@ -66,6 +65,7 @@ export default function StemmerWorkbench() {
 		startedAt: number;
 		offset: number;
 	} | null>(null);
+	const dragDepthRef = useRef(0);
 
 	const setJob = useEffectEvent((nextJob: SeparationJob) => {
 		jobStoreRef.current.set(nextJob);
@@ -335,9 +335,66 @@ export default function StemmerWorkbench() {
 	}, []);
 
 	useEffect(() => {
-		stopPlayback(0);
-		disposeStemGraph(stemPlayersRef.current, stemGainRef.current);
-	}, [track]);
+		const hasFileDrag = (event: globalThis.DragEvent) =>
+			event.dataTransfer?.types.includes("Files") ?? false;
+
+		const handleDragEnter = (event: globalThis.DragEvent) => {
+			if (!hasFileDrag(event)) {
+				return;
+			}
+
+			event.preventDefault();
+			dragDepthRef.current += 1;
+			setIsDragging(true);
+		};
+
+		const handleDragOver = (event: globalThis.DragEvent) => {
+			if (!hasFileDrag(event)) {
+				return;
+			}
+
+			event.preventDefault();
+		};
+
+		const handleDragLeave = (event: globalThis.DragEvent) => {
+			if (!hasFileDrag(event)) {
+				return;
+			}
+
+			event.preventDefault();
+			dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+			if (dragDepthRef.current === 0) {
+				setIsDragging(false);
+			}
+		};
+
+		const handleDrop = (event: globalThis.DragEvent) => {
+			if (!hasFileDrag(event)) {
+				return;
+			}
+
+			event.preventDefault();
+			dragDepthRef.current = 0;
+			setIsDragging(false);
+
+			const file = event.dataTransfer?.files[0];
+			if (file?.type.startsWith("audio/")) {
+				importFile(file);
+			}
+		};
+
+		window.addEventListener("dragenter", handleDragEnter);
+		window.addEventListener("dragover", handleDragOver);
+		window.addEventListener("dragleave", handleDragLeave);
+		window.addEventListener("drop", handleDrop);
+
+		return () => {
+			window.removeEventListener("dragenter", handleDragEnter);
+			window.removeEventListener("dragover", handleDragOver);
+			window.removeEventListener("dragleave", handleDragLeave);
+			window.removeEventListener("drop", handleDrop);
+		};
+	}, []);
 
 	async function handleImport(event: ChangeEvent<HTMLInputElement>) {
 		const file = event.target.files?.[0];
@@ -346,27 +403,6 @@ export default function StemmerWorkbench() {
 		}
 		await importFile(file);
 		event.target.value = "";
-	}
-
-	function handleDrop(event: DragEvent<HTMLDivElement>) {
-		event.preventDefault();
-		setIsDragging(false);
-		const file = event.dataTransfer.files[0];
-		if (file?.type.startsWith("audio/")) {
-			importFile(file);
-		}
-	}
-
-	function handleDragOver(event: DragEvent<HTMLDivElement>) {
-		event.preventDefault();
-		setIsDragging(true);
-	}
-
-	function handleDragLeave(event: DragEvent<HTMLDivElement>) {
-		if (event.currentTarget.contains(event.relatedTarget as Node)) {
-			return;
-		}
-		setIsDragging(false);
 	}
 
 	async function togglePlayback() {
@@ -461,9 +497,6 @@ export default function StemmerWorkbench() {
 			<section
 				aria-label="Audio upload dropzone"
 				className="flex h-dvh flex-col items-center justify-center bg-background px-4"
-				onDragLeave={handleDragLeave}
-				onDragOver={handleDragOver}
-				onDrop={handleDrop}
 			>
 				<div
 					className={`flex w-full max-w-lg flex-col items-center rounded-2xl border-2 border-dashed px-8 py-16 text-center transition-colors ${
@@ -514,9 +547,6 @@ export default function StemmerWorkbench() {
 		<section
 			aria-label="Stemmer workbench"
 			className="flex h-dvh flex-col bg-background"
-			onDragLeave={handleDragLeave}
-			onDragOver={handleDragOver}
-			onDrop={handleDrop}
 		>
 			{isDragging && (
 				<div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">

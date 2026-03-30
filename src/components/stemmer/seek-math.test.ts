@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getSeekProgress } from "./seekMath";
+import { getSeekProgress } from "./seek-math";
 
 describe("getSeekProgress", () => {
 	it("returns null when the track width is not usable", () => {

@@ -24,6 +24,8 @@ export default function WaveBars({
 		);
 	}
 
+	const peakKeys = getPeakKeys(peaks);
+
 	return (
 		<div
 			className={`relative flex ${height} ${compact ? "items-end" : "items-center"} gap-[1px]`}
@@ -39,7 +41,7 @@ export default function WaveBars({
 				return (
 					<span
 						className="min-w-0 flex-1 rounded-full transition-colors duration-75"
-						key={`${index}-${peak}`}
+						key={peakKeys[index]}
 						style={
 							{
 								height: `${Math.max(compact ? 6 : 4, peak * (compact ? 100 : 88))}%`,
@@ -60,4 +62,14 @@ export default function WaveBars({
 			/>
 		</div>
 	);
+}
+
+function getPeakKeys(peaks: number[]) {
+	const counts = new Map<number, number>();
+
+	return peaks.map((peak) => {
+		const nextCount = (counts.get(peak) ?? 0) + 1;
+		counts.set(peak, nextCount);
+		return `${peak}-${nextCount}`;
+	});
 }

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { getSeekProgress } from "./seekMath";
+import { getSeekProgress } from "./seek-math";
 
 type SeekHandler = (progress: number) => void;
 

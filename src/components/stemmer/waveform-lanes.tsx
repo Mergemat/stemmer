@@ -1,8 +1,8 @@
 import { formatTime } from "#/lib/stemmer-audio";
-import { type PlaybackTimeStore, usePlaybackTime } from "./playbackTimeStore";
+import { type PlaybackTimeStore, usePlaybackTime } from "./playback-time-store";
 import type { TrackRecord } from "./types";
 import { STEMS } from "./types";
-import WaveformDisplay from "./WaveformDisplay";
+import WaveformDisplay from "./waveform-display";
 
 interface Props {
 	onSeek: (progress: number) => void;

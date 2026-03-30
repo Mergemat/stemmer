@@ -4,7 +4,7 @@ import type { SeparationPresetId } from "#/lib/stemmer-models";
 import {
 	type SeparationJobStore,
 	useSeparationJob,
-} from "./separationJobStore";
+} from "./separation-job-store";
 
 interface Props {
 	hasTrack: boolean;

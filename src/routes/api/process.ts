@@ -9,136 +9,13 @@ import { getRepairPreset, getSeparationPreset } from "#/lib/stemmer-models";
 export const Route = createFileRoute("/api/process")({
 	server: {
 		handlers: {
-			POST: async ({ request }) => {
-				const formData = await request.formData();
-				const mode = formData.get("mode");
-				const presetId = formData.get("presetId");
-				const file = formData.get("file");
-				const wantsStream =
-					request.headers.get("x-process-stream") === "1" ||
-					request.headers.get("accept")?.includes("application/x-ndjson");
-
-				const sendStream = (
-					run: (send: (event: ProcessStreamEvent) => void) => Promise<void>
-				) => createNdjsonStream(run);
-
-				if (
-					(mode !== "stem" && mode !== "repair") ||
-					typeof presetId !== "string" ||
-					!(file instanceof File)
-				) {
-					if (wantsStream) {
-						return sendStream(async (send) => {
-							send({ type: "error", error: "Invalid process request." });
-						});
-					}
-
-					return Response.json(
-						{ error: "Invalid process request." },
-						{ status: 400 }
-					);
-				}
-
-				try {
-					if (mode === "stem") {
-						const stemPresetId = presetId as Parameters<
-							typeof getSeparationPreset
-						>[0];
-
-						if (!getSeparationPreset(stemPresetId)) {
-							if (wantsStream) {
-								return sendStream(async (send) => {
-									send({ type: "error", error: "Unknown separation preset." });
-								});
-							}
-
-							return Response.json(
-								{ error: "Unknown separation preset." },
-								{ status: 400 }
-							);
-						}
-
-						if (wantsStream) {
-							return sendStream(async (send) => {
-								const result = await runStemJob({
-									file,
-									presetId: stemPresetId,
-									onProgress: (update) => sendStatus(send, update),
-								});
-								send({
-									type: "complete",
-									payload: { mode, ...result },
-								});
-							});
-						}
-
-						const result = await runStemJob({ file, presetId: stemPresetId });
-						return Response.json({ mode, ...result });
-					}
-
-					const repairPresetId = presetId as Parameters<
-						typeof getRepairPreset
-					>[0];
-
-					if (!getRepairPreset(repairPresetId)) {
-						if (wantsStream) {
-							return sendStream(async (send) => {
-								send({ type: "error", error: "Unknown repair preset." });
-							});
-						}
-
-						return Response.json(
-							{ error: "Unknown repair preset." },
-							{ status: 400 }
-						);
-					}
-
-					if (wantsStream) {
-						return sendStream(async (send) => {
-							const result = await runRepairJob({
-								file,
-								presetId: repairPresetId,
-								onProgress: (update) => sendStatus(send, update),
-							});
-							send({
-								type: "complete",
-								payload: { mode, ...result },
-							});
-						});
-					}
-
-					const result = await runRepairJob({
-						file,
-						presetId: repairPresetId,
-					});
-
-					return Response.json({ mode, ...result });
-				} catch (error) {
-					if (wantsStream) {
-						return sendStream(async (send) => {
-							send({
-								type: "error",
-								error:
-									error instanceof Error ? error.message : "Processing failed.",
-							});
-						});
-					}
-
-					return Response.json(
-						{
-							error:
-								error instanceof Error ? error.message : "Processing failed.",
-						},
-						{ status: 500 }
-					);
-				}
-			},
+			POST: ({ request }) => handleProcessPost(request),
 		},
 	},
 });
 
 function createNdjsonStream(
-	run: (send: (event: ProcessStreamEvent) => void) => Promise<void>
+	run: (send: (event: ProcessStreamEvent) => void) => Promise<void> | void
 ) {
 	const encoder = new TextEncoder();
 
@@ -149,7 +26,7 @@ function createNdjsonStream(
 					controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
 				};
 
-				void run(send)
+				const streamTask = Promise.resolve(run(send))
 					.catch((error) => {
 						send({
 							type: "error",
@@ -160,6 +37,8 @@ function createNdjsonStream(
 					.finally(() => {
 						controller.close();
 					});
+
+				streamTask.then(() => undefined);
 			},
 		}),
 		{
@@ -181,4 +60,135 @@ function sendStatus(
 		progress: update.progress,
 		label: update.label,
 	});
+}
+
+async function handleProcessPost(request: Request) {
+	const formData = await request.formData();
+	const wantsStream = wantsProcessStream(request);
+	const parsedRequest = parseProcessRequest(formData);
+
+	if (!parsedRequest) {
+		return wantsStream
+			? sendStreamError("Invalid process request.")
+			: jsonError("Invalid process request.", 400);
+	}
+
+	try {
+		return parsedRequest.mode === "stem"
+			? await handleStemRequest(parsedRequest, wantsStream)
+			: await handleRepairRequest(parsedRequest, wantsStream);
+	} catch (error) {
+		const message =
+			error instanceof Error ? error.message : "Processing failed.";
+		return wantsStream ? sendStreamError(message) : jsonError(message, 500);
+	}
+}
+
+function wantsProcessStream(request: Request) {
+	return (
+		request.headers.get("x-process-stream") === "1" ||
+		request.headers.get("accept")?.includes("application/x-ndjson")
+	);
+}
+
+function parseProcessRequest(formData: FormData) {
+	const mode = formData.get("mode");
+	const presetId = formData.get("presetId");
+	const file = formData.get("file");
+
+	if (
+		(mode !== "stem" && mode !== "repair") ||
+		typeof presetId !== "string" ||
+		!(file instanceof File)
+	) {
+		return null;
+	}
+
+	return { file, mode, presetId };
+}
+
+async function handleStemRequest(
+	request: {
+		file: File;
+		mode: "stem";
+		presetId: string;
+	},
+	wantsStream: boolean
+) {
+	const stemPresetId = request.presetId as Parameters<
+		typeof getSeparationPreset
+	>[0];
+	if (!getSeparationPreset(stemPresetId)) {
+		return wantsStream
+			? sendStreamError("Unknown separation preset.")
+			: jsonError("Unknown separation preset.", 400);
+	}
+
+	if (wantsStream) {
+		return createNdjsonStream(async (send) => {
+			const result = await runStemJob({
+				file: request.file,
+				presetId: stemPresetId,
+				onProgress: (update) => sendStatus(send, update),
+			});
+			send({
+				type: "complete",
+				payload: { mode: request.mode, ...result },
+			});
+		});
+	}
+
+	const result = await runStemJob({
+		file: request.file,
+		presetId: stemPresetId,
+	});
+	return Response.json({ mode: request.mode, ...result });
+}
+
+async function handleRepairRequest(
+	request: {
+		file: File;
+		mode: "repair";
+		presetId: string;
+	},
+	wantsStream: boolean
+) {
+	const repairPresetId = request.presetId as Parameters<
+		typeof getRepairPreset
+	>[0];
+	if (!getRepairPreset(repairPresetId)) {
+		return wantsStream
+			? sendStreamError("Unknown repair preset.")
+			: jsonError("Unknown repair preset.", 400);
+	}
+
+	if (wantsStream) {
+		return createNdjsonStream(async (send) => {
+			const result = await runRepairJob({
+				file: request.file,
+				presetId: repairPresetId,
+				onProgress: (update) => sendStatus(send, update),
+			});
+			send({
+				type: "complete",
+				payload: { mode: request.mode, ...result },
+			});
+		});
+	}
+
+	const result = await runRepairJob({
+		file: request.file,
+		presetId: repairPresetId,
+	});
+	return Response.json({ mode: request.mode, ...result });
+}
+
+function sendStreamError(message: string) {
+	return createNdjsonStream((send) => {
+		send({ type: "error", error: message });
+	});
+}
+
+function jsonError(message: string, status: number) {
+	return Response.json({ error: message }, { status });
 }

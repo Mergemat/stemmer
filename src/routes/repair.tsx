@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Download, Pause, Play, Upload, WandSparkles } from "lucide-react";
 import { type ChangeEvent, type ReactNode, useState } from "react";
-import WaveBars from "#/components/stemmer/WaveBars";
+import WaveBars from "#/components/stemmer/wave-bars";
 import { Button } from "#/components/ui/button";
 import { processWithStream } from "#/lib/process-client";
 import { createWaveformPeaks, formatTime } from "#/lib/stemmer-audio";

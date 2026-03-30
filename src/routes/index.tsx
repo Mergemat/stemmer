@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import StemmerWorkbench from "#/components/stemmer/StemmerWorkbench";
+import StemmerWorkbench from "#/components/stemmer/stemmer-workbench";
 
 export const Route = createFileRoute("/")({ component: App });
 

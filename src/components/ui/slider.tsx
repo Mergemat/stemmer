@@ -1,5 +1,5 @@
 import { Slider as SliderPrimitive } from "radix-ui";
-import * as React from "react";
+import { type ComponentProps, useMemo } from "react";
 
 import { cn } from "#/lib/utils";
 
@@ -10,16 +10,12 @@ function Slider({
 	min = 0,
 	max = 100,
 	...props
-}: React.ComponentProps<typeof SliderPrimitive.Root>) {
-	const _values = React.useMemo(
-		() =>
-			Array.isArray(value)
-				? value
-				: Array.isArray(defaultValue)
-					? defaultValue
-					: [min, max],
+}: ComponentProps<typeof SliderPrimitive.Root>) {
+	const values = useMemo(
+		() => getSliderValues(value, defaultValue, min, max),
 		[value, defaultValue, min, max]
 	);
+	const thumbKeys = useMemo(() => getThumbKeys(values), [values]);
 
 	return (
 		<SliderPrimitive.Root
@@ -47,11 +43,11 @@ function Slider({
 					data-slot="slider-range"
 				/>
 			</SliderPrimitive.Track>
-			{Array.from({ length: _values.length }, (_, index) => (
+			{thumbKeys.map((thumbKey) => (
 				<SliderPrimitive.Thumb
 					className="block size-4 shrink-0 rounded-full border border-primary bg-white shadow-sm ring-ring/50 transition-[color,box-shadow] hover:ring-4 focus-visible:outline-hidden focus-visible:ring-4 disabled:pointer-events-none disabled:opacity-50"
 					data-slot="slider-thumb"
-					key={index}
+					key={thumbKey}
 				/>
 			))}
 		</SliderPrimitive.Root>
@@ -59,3 +55,30 @@ function Slider({
 }
 
 export { Slider };
+
+function getSliderValues(
+	value: number[] | undefined,
+	defaultValue: number[] | undefined,
+	min: number,
+	max: number
+) {
+	if (Array.isArray(value)) {
+		return value;
+	}
+
+	if (Array.isArray(defaultValue)) {
+		return defaultValue;
+	}
+
+	return [min, max];
+}
+
+function getThumbKeys(values: number[]) {
+	const counts = new Map<number, number>();
+
+	return values.map((value) => {
+		const nextCount = (counts.get(value) ?? 0) + 1;
+		counts.set(value, nextCount);
+		return `${value}-${nextCount}`;
+	});
+}
