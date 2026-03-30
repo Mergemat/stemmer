@@ -127,3 +127,44 @@ export function getSeparationPreset(presetId: SeparationPresetId) {
 export function getRepairPreset(presetId: RepairPresetId) {
 	return REPAIR_PRESETS.find((preset) => preset.id === presetId);
 }
+
+/** Returns model filenames required for a specific preset. */
+export function getRequiredModelFiles(
+	presetId: SeparationPresetId | RepairPresetId
+): string[] {
+	const separationPreset = SEPARATION_PRESETS.find((p) => p.id === presetId);
+	if (separationPreset) {
+		return [...separationPreset.modelFilenames];
+	}
+
+	const repairPreset = REPAIR_PRESETS.find((p) => p.id === presetId);
+	if (repairPreset) {
+		return repairPreset.steps.map((step) => step.modelFilename);
+	}
+
+	return [];
+}
+
+/** Returns the list of unique model filenames needed for first-run (fast preset only). */
+export function getFirstRunModelFiles(): string[] {
+	return getRequiredModelFiles("fast");
+}
+
+/** Returns all unique model filenames across all presets. */
+export function getAllModelFiles(): string[] {
+	const files = new Set<string>();
+
+	for (const preset of SEPARATION_PRESETS) {
+		for (const filename of preset.modelFilenames) {
+			files.add(filename);
+		}
+	}
+
+	for (const preset of REPAIR_PRESETS) {
+		for (const step of preset.steps) {
+			files.add(step.modelFilename);
+		}
+	}
+
+	return [...files];
+}

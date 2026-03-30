@@ -1,16 +1,7 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import path from "node:path";
+import { getStemmerRuntimePaths } from "#/lib/runtime-paths";
 
-const PROJECT_ROOT = process.cwd();
-const RUNTIME_ROOT = path.join(PROJECT_ROOT, ".stemmer-runtime");
-const JOBS_ROOT = path.join(RUNTIME_ROOT, "jobs");
-const MODELS_ROOT = path.join(RUNTIME_ROOT, "models");
-const WORKER_SCRIPT = path.join(PROJECT_ROOT, "scripts", "separator-worker.py");
-const PYTHON_BIN =
-	process.platform === "win32"
-		? path.join(PROJECT_ROOT, ".venv", "Scripts", "python.exe")
-		: path.join(PROJECT_ROOT, ".venv", "bin", "python");
 const LINE_BREAK_PATTERN = /\r?\n/;
 const WORKER_IDLE_MS = 5 * 60 * 1000;
 const MAX_LOADED_MODELS = 2;
@@ -92,19 +83,36 @@ class SeparatorWorkerSession {
 	constructor(modelFilename: string, pinned = false) {
 		this.modelFilename = modelFilename;
 		this.pinned = pinned;
+		const {
+			jobsRoot,
+			modelsRoot,
+			projectRoot,
+			workerExecutable,
+			workerMode,
+			workerScript,
+			pythonBin,
+		} = getStemmerRuntimePaths();
 
 		const config = {
-			jobsRoot: JOBS_ROOT,
+			jobsRoot,
 			mdxParams: getDefaultMdxParams(),
 			mdxcParams: getDefaultMdxcParams(),
 			modelFilename,
-			modelsRoot: MODELS_ROOT,
+			modelsRoot,
 			useDirectML: process.platform === "win32",
 			vrParams: getDefaultVrParams(),
 		};
+		const workerCommand =
+			workerMode === "binary"
+				? assertPath(workerExecutable, "Missing worker executable.")
+				: assertPath(pythonBin, "Missing Python runtime.");
+		const workerArgs =
+			workerMode === "binary"
+				? []
+				: [assertPath(workerScript, "Missing worker script.")];
 
-		this.child = spawn(PYTHON_BIN, [WORKER_SCRIPT], {
-			cwd: PROJECT_ROOT,
+		this.child = spawn(workerCommand, workerArgs, {
+			cwd: projectRoot,
 			env: {
 				...process.env,
 				PYTHONUNBUFFERED: "1",
@@ -127,22 +135,27 @@ class SeparatorWorkerSession {
 				this.lineBuffer = consumeBufferedLines(
 					`${this.lineBuffer}${chunk.toString()}`,
 					(line) => {
-						const message = JSON.parse(line) as
-							| WorkerReadyMessage
-							| WorkerErrorMessage
-							| WorkerResultMessage;
+						let message: WorkerReadyMessage | WorkerErrorMessage;
+						try {
+							message = JSON.parse(line);
+						} catch {
+							// Non-JSON output during startup. Ignore.
+							return false;
+						}
+
 						if (message.type === "ready") {
 							cleanup();
 							this.attachRuntimeListeners();
-							resolve(message);
+							resolve(message as WorkerReadyMessage);
 							return true;
 						}
 
 						if (message.type === "fatal") {
 							cleanup();
+							const fatal = message as WorkerErrorMessage;
 							reject(
 								new Error(
-									`${message.error}${message.traceback ? `\n${message.traceback}` : ""}`
+									`${fatal.error}${fatal.traceback ? `\n${fatal.traceback}` : ""}`
 								)
 							);
 							return true;
@@ -282,51 +295,7 @@ class SeparatorWorkerSession {
 		let runtimeBuffer = this.lineBuffer;
 		this.lineBuffer = "";
 
-		const handleLine = (line: string) => {
-			if (!line.trim()) {
-				return;
-			}
-
-			const message = JSON.parse(line) as
-				| WorkerResultMessage
-				| WorkerErrorMessage
-				| WorkerStatusMessage;
-			if (message.type === "status") {
-				const pending = this.pending.get(message.requestId);
-				pending?.onStatus?.({
-					label: message.label,
-					progress: message.progress,
-				});
-				return;
-			}
-
-			if (message.type === "result") {
-				const pending = this.pending.get(message.requestId);
-				if (!pending) {
-					return;
-				}
-				this.pending.delete(message.requestId);
-				pending.resolve(message);
-				return;
-			}
-
-			const pending = message.requestId
-				? this.pending.get(message.requestId)
-				: undefined;
-			if (message.requestId) {
-				this.pending.delete(message.requestId);
-			}
-
-			const error = new Error(
-				`${message.error}${message.traceback ? `\n${message.traceback}` : ""}`
-			);
-			if (pending) {
-				pending.reject(error);
-				return;
-			}
-
-			this.close();
-		};
+		const handleLine = (line: string) => this.handleWorkerLine(line);
 
 		if (runtimeBuffer) {
 			runtimeBuffer = consumeBufferedLines(runtimeBuffer, (line) => {
@@ -357,6 +326,65 @@ class SeparatorWorkerSession {
 			}
 			this.pending.clear();
 		});
+	}
+
+	private handleWorkerLine(line: string) {
+		if (!line.trim()) {
+			return;
+		}
+
+		let parsed: Record<string, unknown>;
+		try {
+			parsed = JSON.parse(line);
+		} catch {
+			// Non-JSON output from the Python process (e.g. library logs). Ignore.
+			return;
+		}
+
+		if (parsed.type === "shutdown") {
+			return;
+		}
+
+		const message = parsed as unknown as
+			| WorkerResultMessage
+			| WorkerErrorMessage
+			| WorkerStatusMessage;
+
+		if (message.type === "status") {
+			const pending = this.pending.get(message.requestId);
+			pending?.onStatus?.({
+				label: message.label,
+				progress: message.progress,
+			});
+			return;
+		}
+
+		if (message.type === "result") {
+			const pending = this.pending.get(message.requestId);
+			if (!pending) {
+				return;
+			}
+			this.pending.delete(message.requestId);
+			pending.resolve(message);
+			return;
+		}
+
+		const pending = message.requestId
+			? this.pending.get(message.requestId)
+			: undefined;
+		if (message.requestId) {
+			this.pending.delete(message.requestId);
+		}
+
+		const error = new Error(
+			`${message.error}${message.traceback ? `\n${message.traceback}` : ""}`
+		);
+		if (pending) {
+			pending.reject(error);
+			return;
+		}
+
+		this.close();
 	}
 
 	private clearIdleTimer() {
@@ -511,4 +539,12 @@ function getDefaultMdxcParams() {
 		pitch_shift: 0,
 		segment_size: 256,
 	};
+}
+
+function assertPath(value: string | undefined, message: string) {
+	if (!value) {
+		throw new Error(message);
+	}
+
+	return value;
 }
