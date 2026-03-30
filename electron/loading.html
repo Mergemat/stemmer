@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<meta content="width=device-width, initial-scale=1.0" name="viewport">
+		<title>Stemmer</title>
+		<style>
+		* {
+			box-sizing: border-box;
+			padding: 0;
+			margin: 0;
+		}
+		html,
+		body {
+			height: 100%;
+			background: #0f1117;
+		}
+		body {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+		}
+		.wrap {
+			display: flex;
+			flex-direction: column;
+			gap: 20px;
+			align-items: center;
+		}
+		svg {
+			width: 64px;
+			height: 64px;
+			color: oklch(0.82 0.17 90);
+			animation: logo-pulse 2s ease-in-out infinite;
+		}
+		.text {
+			text-align: center;
+			animation: fade-up 0.5s ease-out both;
+		}
+		h1 {
+			margin-bottom: 6px;
+			font-size: 18px;
+			font-weight: 600;
+			color: oklch(0.93 0.005 90);
+		}
+		p {
+			font-size: 14px;
+			color: oklch(0.55 0.02 70);
+		}
+		.bar-wrap {
+			width: 320px;
+		}
+		.bar-track {
+			position: relative;
+			height: 4px;
+			overflow: hidden;
+			background: rgba(255, 255, 255, 0.06);
+			border-radius: 9999px;
+		}
+		.bar-shimmer {
+			position: absolute;
+			inset: 0;
+			background: linear-gradient(
+				to right,
+				transparent,
+				oklch(0.82 0.17 90 / 0.5),
+				transparent
+			);
+			border-radius: 9999px;
+			animation: shimmer 1.8s ease-in-out infinite;
+		}
+		@keyframes logo-pulse {
+			0%,
+			100% {
+				opacity: 1;
+				transform: scale(1);
+			}
+			50% {
+				opacity: 0.7;
+				transform: scale(0.96);
+			}
+		}
+		@keyframes shimmer {
+			0% {
+				transform: translateX(-100%);
+			}
+			100% {
+				transform: translateX(100%);
+			}
+		}
+		@keyframes fade-up {
+			from {
+				opacity: 0;
+				transform: translateY(8px);
+			}
+			to {
+				opacity: 1;
+				transform: translateY(0);
+			}
+		}
+		</style>
+	</head>
+	<body>
+		<div class="wrap">
+			<svg fill="none" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+				<title>Stemmer</title>
+				<path
+					d="M88 208V304"
+					opacity="0.4"
+					stroke="currentColor"
+					stroke-linecap="round"
+					stroke-width="24"
+				/>
+				<path
+					d="M136 144V368"
+					opacity="0.4"
+					stroke="currentColor"
+					stroke-linecap="round"
+					stroke-width="24"
+				/>
+				<path
+					d="M260 136L188 264H252L220 376L324 232H260V136Z"
+					fill="currentColor"
+				/>
+				<path
+					d="M376 136V216"
+					opacity="0.4"
+					stroke="currentColor"
+					stroke-linecap="round"
+					stroke-width="24"
+				/>
+				<path
+					d="M424 112V192"
+					opacity="0.4"
+					stroke="currentColor"
+					stroke-linecap="round"
+					stroke-width="24"
+				/>
+				<path
+					d="M376 296V376"
+					opacity="0.4"
+					stroke="currentColor"
+					stroke-linecap="round"
+					stroke-width="24"
+				/>
+				<path
+					d="M424 320V400"
+					opacity="0.4"
+					stroke="currentColor"
+					stroke-linecap="round"
+					stroke-width="24"
+				/>
+			</svg>
+			<div class="text">
+				<h1>Stemmer</h1>
+				<p>Loading...</p>
+			</div>
+			<div class="bar-wrap">
+				<div class="bar-track">
+					<div class="bar-shimmer"></div>
+				</div>
+			</div>
+		</div>
+	</body>
+</html>
