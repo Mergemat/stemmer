@@ -1,5 +1,6 @@
+import { useAtomValue } from "jotai";
 import { useId, useRef } from "react";
-import { type PlaybackTimeStore, usePlaybackTime } from "./playback-time-store";
+import { playbackTimeAtom } from "./stemmer-atoms";
 import { usePointerSeek } from "./use-pointer-seek";
 
 interface Props {
@@ -9,21 +10,19 @@ interface Props {
 	duration: number;
 	onSeek: (progress: number) => void;
 	peaks: number[];
-	playbackTimeStore: PlaybackTimeStore;
 }
 
 const VIEWBOX_HEIGHT = 100;
 
-function WaveformDisplay({
+export default function WaveformDisplay({
 	peaks,
 	duration,
-	playbackTimeStore,
 	onSeek,
 	accent = "#f6c623",
 	className,
 	compact = false,
 }: Props) {
-	const currentTime = usePlaybackTime(playbackTimeStore);
+	const currentTime = useAtomValue(playbackTimeAtom);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const clipPathId = useId().replace(/:/g, "");
 	const strokeWidth = compact ? 0.8 : 0.9;
@@ -88,7 +87,6 @@ function WaveformDisplay({
 				/>
 			</svg>
 
-			{/* Playhead */}
 			<div
 				aria-hidden="true"
 				className="absolute inset-y-0 w-px"
@@ -119,5 +117,3 @@ function buildWaveformPath(peaks: number[]) {
 
 	return path.trim();
 }
-
-export default WaveformDisplay;
