@@ -12,9 +12,6 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as RepairRouteImport } from './routes/repair'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as ApiProcessRouteImport } from './routes/api/process'
-import { Route as ApiPrewarmRouteImport } from './routes/api/prewarm'
-import { Route as ApiOutputJobIdFileNameRouteImport } from './routes/api/output/$jobId/$fileName'
 
 const RepairRoute = RepairRouteImport.update({
   id: '/repair',
@@ -31,81 +28,35 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiProcessRoute = ApiProcessRouteImport.update({
-  id: '/api/process',
-  path: '/api/process',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPrewarmRoute = ApiPrewarmRouteImport.update({
-  id: '/api/prewarm',
-  path: '/api/prewarm',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiOutputJobIdFileNameRoute = ApiOutputJobIdFileNameRouteImport.update({
-  id: '/api/output/$jobId/$fileName',
-  path: '/api/output/$jobId/$fileName',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/repair': typeof RepairRoute
-  '/api/prewarm': typeof ApiPrewarmRoute
-  '/api/process': typeof ApiProcessRoute
-  '/api/output/$jobId/$fileName': typeof ApiOutputJobIdFileNameRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/repair': typeof RepairRoute
-  '/api/prewarm': typeof ApiPrewarmRoute
-  '/api/process': typeof ApiProcessRoute
-  '/api/output/$jobId/$fileName': typeof ApiOutputJobIdFileNameRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/repair': typeof RepairRoute
-  '/api/prewarm': typeof ApiPrewarmRoute
-  '/api/process': typeof ApiProcessRoute
-  '/api/output/$jobId/$fileName': typeof ApiOutputJobIdFileNameRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | '/'
-    | '/about'
-    | '/repair'
-    | '/api/prewarm'
-    | '/api/process'
-    | '/api/output/$jobId/$fileName'
+  fullPaths: '/' | '/about' | '/repair'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/about'
-    | '/repair'
-    | '/api/prewarm'
-    | '/api/process'
-    | '/api/output/$jobId/$fileName'
-  id:
-    | '__root__'
-    | '/'
-    | '/about'
-    | '/repair'
-    | '/api/prewarm'
-    | '/api/process'
-    | '/api/output/$jobId/$fileName'
+  to: '/' | '/about' | '/repair'
+  id: '__root__' | '/' | '/about' | '/repair'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   RepairRoute: typeof RepairRoute
-  ApiPrewarmRoute: typeof ApiPrewarmRoute
-  ApiProcessRoute: typeof ApiProcessRoute
-  ApiOutputJobIdFileNameRoute: typeof ApiOutputJobIdFileNameRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -131,27 +82,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/process': {
-      id: '/api/process'
-      path: '/api/process'
-      fullPath: '/api/process'
-      preLoaderRoute: typeof ApiProcessRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/prewarm': {
-      id: '/api/prewarm'
-      path: '/api/prewarm'
-      fullPath: '/api/prewarm'
-      preLoaderRoute: typeof ApiPrewarmRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/output/$jobId/$fileName': {
-      id: '/api/output/$jobId/$fileName'
-      path: '/api/output/$jobId/$fileName'
-      fullPath: '/api/output/$jobId/$fileName'
-      preLoaderRoute: typeof ApiOutputJobIdFileNameRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
@@ -159,19 +89,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   RepairRoute: RepairRoute,
-  ApiPrewarmRoute: ApiPrewarmRoute,
-  ApiProcessRoute: ApiProcessRoute,
-  ApiOutputJobIdFileNameRoute: ApiOutputJobIdFileNameRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}

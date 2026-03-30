@@ -1,3 +1,4 @@
+import { readBinaryAsset, saveBytes } from "#/lib/desktop-client";
 import type { StemProcessBenchmarks } from "#/lib/process-types";
 import {
 	createFingerprint,
@@ -16,26 +17,38 @@ const FILE_EXTENSION_PATTERN = /\.[^.]+$/;
 
 export async function decodeFile(file: File) {
 	const bytes = await file.arrayBuffer();
-	const context = new AudioContext();
-
-	try {
-		return await context.decodeAudioData(bytes.slice(0));
-	} finally {
-		await context.close();
-	}
+	return decodeAudioBytes(bytes, "Couldn't read that file.");
 }
 
 export async function decodeUrl(url: string) {
-	const response = await fetch(url);
-	if (!response.ok) {
-		throw new Error("Failed to load generated stem.");
-	}
+	const { buffer } = await readBinaryAsset(url);
+	return decodeAudioBytes(buffer, "Failed to load generated stem.");
+}
 
-	const bytes = await response.arrayBuffer();
+export async function loadAudioAsset(url: string) {
+	const { buffer, contentType } = await readBinaryAsset(url);
+	const audioBuffer = await decodeAudioBytes(
+		buffer,
+		"Failed to load generated audio."
+	);
+
+	return {
+		audioBuffer,
+		objectUrl: URL.createObjectURL(
+			new Blob([buffer], {
+				type: contentType,
+			})
+		),
+	};
+}
+
+async function decodeAudioBytes(bytes: ArrayBuffer, errorMessage: string) {
 	const context = new AudioContext();
 
 	try {
 		return await context.decodeAudioData(bytes.slice(0));
+	} catch {
+		throw new Error(errorMessage);
 	} finally {
 		await context.close();
 	}
@@ -108,13 +121,13 @@ export async function exportMixFile(
 	}
 
 	const renderedBuffer = await offlineContext.startRendering();
-	downloadWavBuffer(
+	await downloadWavBuffer(
 		encodeWav(renderedBuffer),
 		`${track.name.replace(FILE_EXTENSION_PATTERN, "")}-stemmer.wav`
 	);
 }
 
-export function exportStemFile(track: TrackRecord, stemId: StemOutputId) {
+export async function exportStemFile(track: TrackRecord, stemId: StemOutputId) {
 	const buffer = track.stemBuffers[stemId];
 	if (!buffer) {
 		return;
@@ -124,7 +137,7 @@ export function exportStemFile(track: TrackRecord, stemId: StemOutputId) {
 		STEM_OUTPUTS.find((stem) => stem.id === stemId)?.label.toLowerCase() ??
 		stemId;
 
-	downloadWavBuffer(
+	await downloadWavBuffer(
 		encodeWav(buffer),
 		`${track.name.replace(FILE_EXTENSION_PATTERN, "")}-${stemLabel}.wav`
 	);
@@ -139,11 +152,9 @@ function formatDuration(milliseconds: number) {
 }
 
 function downloadWavBuffer(buffer: ArrayBuffer, fileName: string) {
-	const blob = new Blob([buffer], { type: "audio/wav" });
-	const exportUrl = URL.createObjectURL(blob);
-	const link = document.createElement("a");
-	link.href = exportUrl;
-	link.download = fileName;
-	link.click();
-	URL.revokeObjectURL(exportUrl);
+	return saveBytes({
+		buffer,
+		mimeType: "audio/wav",
+		suggestedName: fileName,
+	});
 }

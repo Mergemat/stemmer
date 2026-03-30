@@ -1,6 +1,7 @@
 import { useAtomValue, useStore } from "jotai";
 import { startTransition, useEffect, useEffectEvent, useRef } from "react";
 import { type Gain, now, type Player, start } from "tone";
+import { ensureModelsForPreset } from "#/lib/desktop-client";
 import { processWithStream } from "#/lib/process-client";
 import {
 	createFingerprint,
@@ -40,10 +41,10 @@ import {
 } from "./stemmer-audio-graph";
 import {
 	decodeFile,
-	decodeUrl,
 	exportMixFile,
 	exportStemFile,
 	formatBenchmarks,
+	loadAudioAsset,
 	persistCache,
 	readCache,
 } from "./stemmer-file-ops";
@@ -53,7 +54,7 @@ const PRESET_IDS = MODEL_PRESETS.map((preset) => preset.id);
 
 export interface StemmerActions {
 	exportMix: () => Promise<void>;
-	exportStem: (stemId: StemOutputId) => void;
+	exportStem: (stemId: StemOutputId) => Promise<void>;
 	importFile: (file: File) => Promise<void>;
 	patchStem: (stemId: StemOutputId, patch: Partial<StemState>) => void;
 	runPreview: () => Promise<void>;
@@ -120,6 +121,7 @@ export function useStemmerController(): StemmerActions {
 		const currentTrack = store.get(trackAtom);
 		if (currentTrack) {
 			URL.revokeObjectURL(currentTrack.sourceUrl);
+			revokeObjectUrls(currentTrack.stemUrls);
 		}
 
 		store.set(isDecodingAtom, true);
@@ -204,9 +206,24 @@ export function useStemmerController(): StemmerActions {
 		});
 
 		try {
+			const presetId = store.get(selectedPresetIdAtom);
+
+			await ensureModelsForPreset(presetId, (progress) => {
+				const pct =
+					progress.bytesTotal > 0
+						? Math.round((progress.bytesDownloaded / progress.bytesTotal) * 100)
+						: 0;
+				setJob({
+					details: undefined,
+					phase: "running",
+					progress: Math.min(pct, 99),
+					label: `Downloading model ${progress.filename}...`,
+				});
+			});
+
 			const formData = new FormData();
 			formData.append("mode", "stem");
-			formData.append("presetId", store.get(selectedPresetIdAtom));
+			formData.append("presetId", presetId);
 			formData.append("file", activeTrack.sourceFile);
 			formData.append("fingerprint", activeTrack.id);
 
@@ -242,13 +259,13 @@ export function useStemmerController(): StemmerActions {
 
 			const stemAssets = await Promise.all(
 				payload.outputs.map(async (output) => {
-					const buffer = await decodeUrl(output.url);
+					const asset = await loadAudioAsset(output.url);
 					return [
 						output.id,
 						{
-							buffer,
-							peaks: createWaveformPeaks(buffer, 220),
-							url: output.url,
+							buffer: asset.audioBuffer,
+							peaks: createWaveformPeaks(asset.audioBuffer, 220),
+							url: asset.objectUrl,
 						},
 					] as const;
 				})
@@ -276,6 +293,8 @@ export function useStemmerController(): StemmerActions {
 						: current
 				);
 			});
+
+			revokeObjectUrls(activeTrack.stemUrls);
 
 			setJob({
 				details: formatBenchmarks(payload.benchmarks),
@@ -418,7 +437,7 @@ export function useStemmerController(): StemmerActions {
 		}
 	});
 
-	const exportStem = useEffectEvent((stemId: StemOutputId) => {
+	const exportStem = useEffectEvent(async (stemId: StemOutputId) => {
 		const activeTrack = store.get(trackAtom);
 		if (
 			!activeTrack ||
@@ -431,7 +450,7 @@ export function useStemmerController(): StemmerActions {
 		store.set(isExportingAtom, true);
 
 		try {
-			exportStemFile(activeTrack, stemId);
+			await exportStemFile(activeTrack, stemId);
 		} finally {
 			store.set(isExportingAtom, false);
 		}
@@ -630,4 +649,12 @@ export function useStemmerController(): StemmerActions {
 		selectPreset,
 		togglePlayback,
 	};
+}
+
+function revokeObjectUrls(urls: Partial<Record<StemOutputId, string>>) {
+	for (const url of Object.values(urls)) {
+		if (url) {
+			URL.revokeObjectURL(url);
+		}
+	}
 }

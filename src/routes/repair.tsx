@@ -1,8 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Download, Pause, Play, Upload, WandSparkles } from "lucide-react";
-import { type ChangeEvent, type ReactNode, useState } from "react";
+import { type ChangeEvent, type ReactNode, useEffect, useState } from "react";
+import {
+	decodeFile,
+	loadAudioAsset,
+} from "#/components/stemmer/stemmer-file-ops";
 import WaveBars from "#/components/stemmer/wave-bars";
 import { Button } from "#/components/ui/button";
+import { ensureModelsForPreset } from "#/lib/desktop-client";
 import { processWithStream } from "#/lib/process-client";
 import { createWaveformPeaks, formatTime } from "#/lib/stemmer-audio";
 import { REPAIR_PRESETS, type RepairPresetId } from "#/lib/stemmer-models";
@@ -38,6 +43,17 @@ function RepairPage() {
 	const [sourceTime, setSourceTime] = useState(0);
 	const [repairTime, setRepairTime] = useState(0);
 
+	useEffect(() => {
+		return () => {
+			if (sourceTrack) {
+				URL.revokeObjectURL(sourceTrack.sourceUrl);
+			}
+			if (repairOutput) {
+				URL.revokeObjectURL(repairOutput.url);
+			}
+		};
+	}, [repairOutput, sourceTrack]);
+
 	async function handleImport(event: ChangeEvent<HTMLInputElement>) {
 		const file = event.target.files?.[0];
 		if (!file) {
@@ -54,6 +70,9 @@ function RepairPage() {
 		try {
 			const url = URL.createObjectURL(file);
 			const buffer = await decodeFile(file);
+			if (repairOutput) {
+				URL.revokeObjectURL(repairOutput.url);
+			}
 			setSourceTrack({
 				name: file.name,
 				file,
@@ -82,6 +101,15 @@ function RepairPage() {
 		setStatus("Preparing repair...");
 
 		try {
+			setStatus("Checking models...");
+			await ensureModelsForPreset(selectedPresetId, (progress) => {
+				const pct =
+					progress.bytesTotal > 0
+						? Math.round((progress.bytesDownloaded / progress.bytesTotal) * 100)
+						: 0;
+				setStatus(`Downloading model ${progress.filename}... ${pct}%`);
+			});
+
 			const formData = new FormData();
 			formData.append("mode", "repair");
 			formData.append("presetId", selectedPresetId);
@@ -98,12 +126,15 @@ function RepairPage() {
 				throw new Error("Unexpected response from the processor.");
 			}
 
-			const buffer = await decodeUrl(payload.outputUrl);
+			const asset = await loadAudioAsset(payload.outputUrl);
+			if (repairOutput) {
+				URL.revokeObjectURL(repairOutput.url);
+			}
 			setRepairOutput({
-				url: payload.outputUrl,
+				url: asset.objectUrl,
 				fileName: payload.outputFileName,
-				peaks: createWaveformPeaks(buffer, 220),
-				duration: buffer.duration,
+				peaks: createWaveformPeaks(asset.audioBuffer, 220),
+				duration: asset.audioBuffer.duration,
 				modelsUsed: payload.modelsUsed ?? [],
 			});
 			setRepairTime(0);
@@ -335,31 +366,4 @@ function AudioPlayerButton({
 			{playing ? "Pause" : "Play"}
 		</Button>
 	);
-}
-
-async function decodeFile(file: File) {
-	const bytes = await file.arrayBuffer();
-	const audioContext = new AudioContext();
-
-	try {
-		return await audioContext.decodeAudioData(bytes.slice(0));
-	} finally {
-		await audioContext.close();
-	}
-}
-
-async function decodeUrl(url: string) {
-	const response = await fetch(url);
-	if (!response.ok) {
-		throw new Error("Failed to load repaired audio.");
-	}
-
-	const bytes = await response.arrayBuffer();
-	const audioContext = new AudioContext();
-
-	try {
-		return await audioContext.decodeAudioData(bytes.slice(0));
-	} finally {
-		await audioContext.close();
-	}
 }

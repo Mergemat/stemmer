@@ -1,5 +1,5 @@
 import { useAtomValue } from "jotai";
-import { Pause, Play, Zap } from "lucide-react";
+import { Check, Pause, Play, Zap } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "#/components/ui/button";
 import {
@@ -48,6 +48,7 @@ export default function Transport() {
 
 	return (
 		<div className="relative shrink-0 border-border/60 border-t bg-card shadow-[0_-1px_8px_rgba(0,0,0,0.15)]">
+			{/* Progress rail across the top */}
 			{isRunning ? (
 				<div className="absolute inset-x-0 top-0 h-0.5 overflow-hidden bg-primary/10">
 					<div
@@ -58,6 +59,7 @@ export default function Transport() {
 			) : null}
 
 			<div className="flex items-center gap-3 px-4 py-2.5">
+				{/* Play / Pause */}
 				<ShortcutTooltip content={isPlaying ? "Pause (Space)" : "Play (Space)"}>
 					<span className="shrink-0">
 						<Button
@@ -79,6 +81,7 @@ export default function Transport() {
 
 				<div className="h-5 w-px shrink-0 bg-border/50" />
 
+				{/* Preset picker */}
 				<div className="flex items-center overflow-hidden rounded-lg border border-border/60 bg-background">
 					{MODEL_PRESETS.map((preset, index) => (
 						<ShortcutTooltip
@@ -101,6 +104,7 @@ export default function Transport() {
 					))}
 				</div>
 
+				{/* Separate button */}
 				<ShortcutTooltip content="Separate (Enter)">
 					<span className="shrink-0">
 						<Button
@@ -130,10 +134,13 @@ export default function Transport() {
 					</span>
 				</ShortcutTooltip>
 
+				{/* Status area */}
 				<div className="ml-auto flex min-w-0 flex-col items-end gap-0.5">
-					<span className="max-w-[22rem] truncate rounded-md bg-white/[0.04] px-2.5 py-1 font-medium text-muted-foreground text-xs">
-						{friendlyLabel(job.label)}
-					</span>
+					<StatusBadge
+						isDone={isDone}
+						isRunning={isRunning}
+						label={friendlyLabel(job.label)}
+					/>
 					{job.details ? (
 						<span className="max-w-[24rem] truncate font-medium text-[11px] text-muted-foreground/80">
 							{job.details}
@@ -157,5 +164,39 @@ function ShortcutTooltip({
 			<TooltipTrigger asChild>{children}</TooltipTrigger>
 			<TooltipContent>{content}</TooltipContent>
 		</Tooltip>
+	);
+}
+
+function StatusBadge({
+	isDone,
+	isRunning,
+	label,
+}: {
+	isDone: boolean;
+	isRunning: boolean;
+	label: string;
+}) {
+	if (isDone) {
+		return (
+			<span className="flex items-center gap-1.5 rounded-md bg-emerald-500/10 px-2.5 py-1 font-medium text-emerald-400 text-xs">
+				<Check className="size-3" />
+				{label}
+			</span>
+		);
+	}
+
+	if (isRunning) {
+		return (
+			<span className="flex items-center gap-2 rounded-md bg-primary/10 px-2.5 py-1 font-medium text-primary text-xs">
+				<span className="size-1.5 animate-pulse rounded-full bg-primary" />
+				{label}
+			</span>
+		);
+	}
+
+	return (
+		<span className="max-w-[22rem] truncate rounded-md bg-white/[0.04] px-2.5 py-1 font-medium text-muted-foreground text-xs">
+			{label}
+		</span>
 	);
 }
