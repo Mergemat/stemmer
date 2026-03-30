@@ -6,6 +6,12 @@ import sys
 import time
 import traceback
 
+# When running as a PyInstaller frozen binary, ffmpeg is bundled in _internal/bin.
+# Prepend that directory to PATH so audio_separator's subprocess call finds it.
+if getattr(sys, "frozen", False):
+    _meipass_bin = os.path.join(sys._MEIPASS, "bin")  # noqa: SLF001
+    os.environ["PATH"] = _meipass_bin + os.pathsep + os.environ.get("PATH", "")
+
 from audio_separator.separator import Separator
 
 
@@ -160,6 +166,11 @@ def build_separator(config):
         vr_params=config["vrParams"],
         mdxc_params=config["mdxcParams"],
     )
+    # Route CoreML ops through the Apple Neural Engine for faster inference.
+    if separator.onnx_execution_provider == ["CoreMLExecutionProvider"]:
+        separator.onnx_execution_provider = [
+            ("CoreMLExecutionProvider", {"MLComputeUnits": "CPUAndNeuralEngine"}),
+        ]
     separator.logger.addHandler(progress_handler)
     separator.load_model(config["modelFilename"])
     return separator, current_request_id
@@ -180,14 +191,20 @@ def boot_separator(config):
         separator, current_request_id = build_separator(config)
 
     provider = (separator.onnx_execution_provider or ["CPUExecutionProvider"])[0]
+    if isinstance(provider, (list, tuple)):
+        provider = provider[0]
 
-    return separator, current_request_id, {
-        "backend": classify_backend(provider),
-        "loadMs": round((time.perf_counter() - load_started_at) * 1000, 1),
-        "provider": provider,
-        "startupMs": round((time.perf_counter() - startup_started_at) * 1000, 1),
-        "torchDevice": getattr(separator.torch_device, "type", "cpu"),
-    }
+    return (
+        separator,
+        current_request_id,
+        {
+            "backend": classify_backend(provider),
+            "loadMs": round((time.perf_counter() - load_started_at) * 1000, 1),
+            "provider": provider,
+            "startupMs": round((time.perf_counter() - startup_started_at) * 1000, 1),
+            "torchDevice": getattr(separator.torch_device, "type", "cpu"),
+        },
+    )
 
 
 def handle_request(separator, current_request_id, message):
@@ -205,9 +222,23 @@ def handle_request(separator, current_request_id, message):
         separator.model_instance.output_dir = output_dir
 
     started_at = time.perf_counter()
-    emit({"label": "Separating stems...", "progress": 46, "requestId": request_id, "type": "status"})
+    emit(
+        {
+            "label": "Separating stems...",
+            "progress": 46,
+            "requestId": request_id,
+            "type": "status",
+        }
+    )
     output_files = separator.separate(input_path)
-    emit({"label": "Finalizing separated stems...", "progress": 94, "requestId": request_id, "type": "status"})
+    emit(
+        {
+            "label": "Finalizing separated stems...",
+            "progress": 94,
+            "requestId": request_id,
+            "type": "status",
+        }
+    )
     current_request_id["value"] = None
 
     emit(

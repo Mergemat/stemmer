@@ -8,6 +8,7 @@ import tsconfigPaths from "vite-tsconfig-paths";
 const isTest = process.env.VITEST === "true";
 
 const config = defineConfig({
+	base: "./",
 	plugins: [
 		devtools(),
 		tanstackRouter(),

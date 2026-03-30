@@ -18,12 +18,12 @@
     "build": "bun run build:renderer && bun run build:electron && bun run build:worker",
     "build:ci": "bun run build:renderer && bun run build:electron",
     "build:renderer": "vite build",
-    "build:electron": "bun build --target=node --format=cjs --external electron --outfile dist-electron/main.cjs ./electron/main.ts && bun build --target=node --format=cjs --external electron --outfile dist-electron/preload.cjs ./electron/preload.ts",
+    "build:electron": "bun build --target=node --format=cjs --external electron --outfile dist-electron/main.cjs ./electron/main.ts && bun build --target=node --format=cjs --external electron --outfile dist-electron/preload.cjs ./electron/preload.ts && cp electron/loading.html dist-electron/loading.html",
     "build:worker": "bun run scripts/build-worker-binary.ts",
     "prepare:desktop-assets": "bun run scripts/prepare-desktop-assets.ts",
     "preview:renderer": "vite preview --host 127.0.0.1 --port 3000",
     "electron": "bun run build:electron && bun x electron .",
-    "dist": "bun run build && bun x electron-builder",
+    "dist": "bun run prepare:desktop-assets && bun run build && bun x electron-builder",
     "setup:runtime": "bun run scripts/setup-runtime.ts",
     "runtime:doctor": "bun run scripts/runtime-doctor.ts",
     "test": "vitest run",
@@ -91,24 +91,27 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
-      "package.json"
+      "package.json",
+      "!node_modules/**/*"
     ],
     "extraResources": [
       {
         "from": "worker-dist/stemmer-worker",
         "to": "worker"
+      },
+      {
+        "from": "app-assets/bin",
+        "to": "bin"
       }
     ],
+    "icon": "build/icon.png",
     "mac": {
+      "icon": "build/icon.icns",
       "category": "public.app-category.music",
       "identity": null,
       "target": [
         {
-          "target": "dmg",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
+          "target": "dmg"
         }
       ],
       "signIgnore": [

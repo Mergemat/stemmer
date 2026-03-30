@@ -1,5 +1,14 @@
 import { spawn } from "node:child_process";
-import { mkdir, readlink, rm, symlink } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import {
+	mkdir,
+	readFile,
+	readlink,
+	rm,
+	stat,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 
 const PROJECT_ROOT = process.cwd();
@@ -14,14 +23,80 @@ const WORKER_EXECUTABLE = path.join(
 	"stemmer-worker",
 	process.platform === "win32" ? "stemmer-worker.exe" : "stemmer-worker"
 );
+const CACHE_FILE = path.join(DIST_ROOT, ".build-hash");
+
+async function computeBuildHash(): Promise<string> {
+	const h = createHash("sha256");
+
+	// Hash the worker script source
+	const workerSrc = await readFile(
+		path.join(PROJECT_ROOT, "scripts", "separator-worker.py")
+	);
+	h.update(workerSrc);
+
+	// Hash this build script itself so changes to build flags invalidate cache
+	const buildScript = await readFile(
+		path.join(PROJECT_ROOT, "scripts", "build-worker-binary.ts")
+	);
+	h.update(buildScript);
+
+	// Hash installed packages so a `pip install --upgrade` invalidates cache
+	const { stdout: pipFreeze } = await runCommandCapture(RUNTIME_PYTHON, [
+		"-m",
+		"pip",
+		"freeze",
+	]);
+	h.update(pipFreeze);
+
+	// Include platform so cross-compiling doesn't reuse a stale binary
+	h.update(process.platform);
+
+	return h.digest("hex");
+}
+
+async function isCacheValid(hash: string): Promise<boolean> {
+	try {
+		await stat(WORKER_EXECUTABLE);
+		const cached = await readFile(CACHE_FILE, "utf8");
+		return cached.trim() === hash;
+	} catch {
+		return false;
+	}
+}
+
+async function resolveFfmpegPath(): Promise<string> {
+	const { stdout } = await runCommandCapture(
+		process.platform === "win32" ? "where" : "which",
+		["ffmpeg"]
+	);
+	const resolved = stdout.trim().split("\n")[0].trim();
+	if (!resolved) {
+		throw new Error(
+			"ffmpeg not found on PATH. Install it before building (e.g. brew install ffmpeg)."
+		);
+	}
+	return resolved;
+}
 
 async function main() {
 	await assertRuntimePython();
 	await installPyInstaller();
+
+	const hash = await computeBuildHash();
+	if (await isCacheValid(hash)) {
+		console.log(
+			"[build-worker] Cache hit — skipping PyInstaller build (nothing changed)."
+		);
+		return;
+	}
+	console.log("[build-worker] Cache miss — rebuilding worker binary.");
+
 	await rm(DIST_ROOT, { force: true, recursive: true });
 	await rm(BUILD_ROOT, { force: true, recursive: true });
 	await mkdir(DIST_ROOT, { recursive: true });
 	await mkdir(BUILD_ROOT, { recursive: true });
+
+	const ffmpegPath = await resolveFfmpegPath();
 
 	const args = [
 		"-m",
@@ -63,6 +138,9 @@ async function main() {
 		"backports.tarfile",
 		"--copy-metadata",
 		"audio-separator",
+		// Bundle ffmpeg so the frozen binary can find it without a system install
+		"--add-binary",
+		`${ffmpegPath}:bin`,
 	];
 
 	if (process.platform === "win32") {
@@ -76,6 +154,7 @@ async function main() {
 		await fixMacOSFrameworkPython();
 	}
 	await smokeTestWorkerBinary();
+	await writeFile(CACHE_FILE, hash, "utf8");
 }
 
 async function assertRuntimePython() {

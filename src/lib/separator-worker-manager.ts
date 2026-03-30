@@ -1,5 +1,6 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import { getStemmerRuntimePaths } from "#/lib/runtime-paths";
 
 const LINE_BREAK_PATTERN = /\r?\n/;
@@ -71,6 +72,7 @@ class SeparatorWorkerSession {
 	private busyCount = 0;
 	private readonly child: ChildProcessWithoutNullStreams;
 	private closed = false;
+	private closeReason: string | null = null;
 	private executions = 0;
 	private idleTimer: ReturnType<typeof setTimeout> | null = null;
 	private lastUsedAt = Date.now();
@@ -79,11 +81,13 @@ class SeparatorWorkerSession {
 	private pinned = false;
 	private prewarmed = false;
 	private readonly readyPromise: Promise<WorkerReadyMessage>;
+	private runtimeStderrTail = "";
 
 	constructor(modelFilename: string, pinned = false) {
 		this.modelFilename = modelFilename;
 		this.pinned = pinned;
 		const {
+			ffmpegDir,
 			jobsRoot,
 			modelsRoot,
 			projectRoot,
@@ -111,10 +115,17 @@ class SeparatorWorkerSession {
 				? []
 				: [assertPath(workerScript, "Missing worker script.")];
 
+		// Prepend the bundled ffmpeg dir so audio_separator can find the binary
+		// regardless of the user's system PATH (especially in packaged Electron).
+		const pathEnv = [ffmpegDir, process.env.PATH ?? ""]
+			.filter(Boolean)
+			.join(path.delimiter);
+
 		this.child = spawn(workerCommand, workerArgs, {
 			cwd: projectRoot,
 			env: {
 				...process.env,
+				PATH: pathEnv,
 				PYTHONUNBUFFERED: "1",
 				STEMMER_WORKER_CONFIG: JSON.stringify(config),
 			},
@@ -269,16 +280,20 @@ class SeparatorWorkerSession {
 		}
 	}
 
-	close() {
+	close(reason?: string) {
 		if (this.closed) {
 			return;
 		}
 
 		this.closed = true;
+		this.closeReason = reason ?? this.closeReason ?? null;
 		this.clearIdleTimer();
 
+		const closeMessage =
+			this.closeReason ??
+			`Separator worker for ${this.modelFilename} closed.`;
 		for (const { reject } of this.pending.values()) {
-			reject(new Error(`Separator worker for ${this.modelFilename} closed.`));
+			reject(new Error(closeMessage));
 		}
 		this.pending.clear();
 
@@ -314,15 +329,21 @@ class SeparatorWorkerSession {
 			);
 		});
 
+		this.child.stderr.on("data", (chunk: Buffer) => {
+			this.runtimeStderrTail = `${this.runtimeStderrTail}${chunk.toString()}`.slice(
+				-4000
+			);
+		});
+
 		this.child.on("exit", (code) => {
 			this.closed = true;
 			this.clearIdleTimer();
+			const exitMessage =
+				this.runtimeStderrTail.trim() ||
+				this.closeReason ||
+				`Separator worker for ${this.modelFilename} exited with code ${code}.`;
 			for (const { reject } of this.pending.values()) {
-				reject(
-					new Error(
-						`Separator worker for ${this.modelFilename} exited with code ${code}.`
-					)
-				);
+				reject(new Error(exitMessage));
 			}
 			this.pending.clear();
 		});
@@ -384,7 +405,7 @@ class SeparatorWorkerSession {
 			return;
 		}
 
-		this.close();
+		this.close(error.message);
 	}
 
 	private clearIdleTimer() {
@@ -511,10 +532,10 @@ function consumeBufferedLines(
 
 function getDefaultMdxParams() {
 	return {
-		batch_size: 1,
+		batch_size: 4,
 		enable_denoise: false,
 		hop_length: 1024,
-		overlap: 0.25,
+		overlap: 0.1,
 		segment_size: 256,
 	};
 }
