@@ -1,6 +1,6 @@
-import { memo, useEffect, useRef } from "react";
-import WaveSurfer from "wavesurfer.js";
+import { useId, useRef } from "react";
 import { type PlaybackTimeStore, usePlaybackTime } from "./playbackTimeStore";
+import { usePointerSeek } from "./usePointerSeek";
 
 interface Props {
 	accent?: string;
@@ -11,6 +11,8 @@ interface Props {
 	peaks: number[];
 	playbackTimeStore: PlaybackTimeStore;
 }
+
+const VIEWBOX_HEIGHT = 100;
 
 function WaveformDisplay({
 	peaks,
@@ -23,80 +25,11 @@ function WaveformDisplay({
 }: Props) {
 	const currentTime = usePlaybackTime(playbackTimeStore);
 	const containerRef = useRef<HTMLDivElement>(null);
-	const waveSurferRef = useRef<WaveSurfer | null>(null);
-	const currentTimeRef = useRef(currentTime);
-	const onSeekRef = useRef(onSeek);
-
-	useEffect(() => {
-		currentTimeRef.current = currentTime;
-	}, [currentTime]);
-
-	useEffect(() => {
-		onSeekRef.current = onSeek;
-	}, [onSeek]);
-
-	useEffect(() => {
-		const container = containerRef.current;
-		if (!container) {
-			return;
-		}
-
-		waveSurferRef.current?.destroy();
-		waveSurferRef.current = null;
-
-		if (!peaks.length || duration <= 0) {
-			return;
-		}
-
-		const waveSurfer = WaveSurfer.create({
-			container,
-			height: "auto",
-			peaks: [peaks],
-			duration,
-			waveColor: "rgba(255,255,255,0.08)",
-			progressColor: accent,
-			cursorColor: "#ffffff",
-			cursorWidth: compact ? 1.5 : 2,
-			barWidth: compact ? 2 : 2.5,
-			barGap: 1.5,
-			barRadius: 999,
-			barAlign: "bottom",
-			barMinHeight: compact ? 4 : 3,
-			interact: true,
-			dragToSeek: true,
-			hideScrollbar: true,
-			autoScroll: false,
-			autoCenter: false,
-		});
-
-		waveSurfer.on("interaction", (nextTime) => {
-			onSeekRef.current(duration > 0 ? nextTime / duration : 0);
-		});
-
-		waveSurfer.setTime(currentTimeRef.current);
-		waveSurferRef.current = waveSurfer;
-
-		return () => {
-			waveSurfer.destroy();
-			if (waveSurferRef.current === waveSurfer) {
-				waveSurferRef.current = null;
-			}
-		};
-	}, [accent, compact, duration, peaks]);
-
-	useEffect(() => {
-		const waveSurfer = waveSurferRef.current;
-		if (!waveSurfer || duration <= 0) {
-			return;
-		}
-
-		const nextTime = Math.max(0, Math.min(duration, currentTime));
-		if (Math.abs(waveSurfer.getCurrentTime() - nextTime) <= 0.05) {
-			return;
-		}
-
-		waveSurfer.setTime(nextTime);
-	}, [currentTime, duration]);
+	const clipPathId = useId().replace(/:/g, "");
+	const strokeWidth = compact ? 0.8 : 0.9;
+	const playhead = duration > 0 ? Math.min(1, Math.max(0, currentTime / duration)) : 0;
+	const waveformPath = buildWaveformPath(peaks);
+	const { isScrubbing, ...pointerHandlers } = usePointerSeek(containerRef, onSeek);
 
 	if (!peaks.length || duration <= 0) {
 		return (
@@ -108,7 +41,73 @@ function WaveformDisplay({
 		);
 	}
 
-	return <div className={className} ref={containerRef} />;
+	return (
+		<div
+			{...pointerHandlers}
+			aria-hidden="true"
+			className={`${className ?? ""} relative overflow-hidden ${isScrubbing ? "cursor-ew-resize" : ""}`}
+			ref={containerRef}
+		>
+			<svg
+				className="h-full w-full"
+				preserveAspectRatio="none"
+				viewBox={`0 0 ${peaks.length} ${VIEWBOX_HEIGHT}`}
+			>
+				<title>Waveform</title>
+				<defs>
+					<clipPath id={clipPathId}>
+						<rect
+							height={VIEWBOX_HEIGHT}
+							width={Math.max(playhead * peaks.length, 0)}
+							x="0"
+							y="0"
+						/>
+					</clipPath>
+				</defs>
+
+				<path
+					d={waveformPath}
+					fill="none"
+					stroke="rgba(255,255,255,0.12)"
+					strokeLinecap="round"
+					strokeLinejoin="round"
+					strokeWidth={strokeWidth}
+				/>
+				<path
+					clipPath={`url(#${clipPathId})`}
+					d={waveformPath}
+					fill="none"
+					stroke={accent}
+					strokeLinecap="round"
+					strokeLinejoin="round"
+					strokeWidth={strokeWidth}
+				/>
+			</svg>
+
+			<div
+				aria-hidden="true"
+				className="absolute inset-y-0 w-0.5 bg-white/90 shadow-[0_0_0_1px_rgba(255,255,255,0.08)]"
+				style={{ left: `${playhead * 100}%`, transform: "translateX(-50%)" }}
+			/>
+		</div>
+	);
 }
 
-export default memo(WaveformDisplay);
+function buildWaveformPath(peaks: number[]) {
+	let path = "";
+
+	for (let index = 0; index < peaks.length; index += 1) {
+		const peak = peaks[index] ?? 0;
+		const amplitude = Math.max(0.02, Math.min(1, peak));
+		const halfHeight = amplitude * 42;
+		const x = index + 0.5;
+		const top = 50 - halfHeight;
+		const bottom = 50 + halfHeight;
+
+		path += `M ${x} ${top} L ${x} ${bottom} `;
+	}
+
+	return path.trim();
+}
+
+export default WaveformDisplay;
