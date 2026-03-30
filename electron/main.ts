@@ -51,11 +51,28 @@ app
 
 async function createMainWindow() {
 	const appRoot = app.getAppPath();
-	const window = new BrowserWindow({
-		backgroundColor: "#08131a",
+
+	const loadingHtml = path.join(import.meta.dirname, "loading.html");
+	const loader = new BrowserWindow({
+		backgroundColor: "#0f1117",
+		center: true,
+		frame: false,
 		height: 940,
+		resizable: false,
+		title: "Stemmer",
+		width: 1440,
+		webPreferences: { contextIsolation: true },
+	});
+	await loader.loadFile(loadingHtml);
+	loader.show();
+
+	const window = new BrowserWindow({
+		backgroundColor: "#0f1117",
+		height: 940,
+		icon: path.join(appRoot, "build", "icon.png"),
 		minHeight: 760,
 		minWidth: 1100,
+		show: false,
 		title: "Stemmer",
 		width: 1440,
 		webPreferences: {
@@ -64,6 +81,11 @@ async function createMainWindow() {
 			preload: path.join(appRoot, "dist-electron", "preload.cjs"),
 			sandbox: false,
 		},
+	});
+
+	window.once("ready-to-show", () => {
+		loader.close();
+		window.show();
 	});
 
 	if (DEV_SERVER_URL) {

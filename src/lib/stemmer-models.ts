@@ -1,4 +1,4 @@
-export type SeparationPresetId = "quality" | "balanced" | "fast" | "aggressive";
+export type SeparationPresetId = "quality" | "balanced" | "fast";
 
 export type RepairPresetId =
 	| "dry-room"
@@ -44,14 +44,6 @@ export const SEPARATION_PRESETS: Array<{
 		modelLabel: "UVR-MDX-NET-Voc_FT.onnx",
 		modelFilenames: ["UVR-MDX-NET-Voc_FT.onnx"],
 		note: "lowest cold-start and warm-run latency on the current runtime",
-	},
-	{
-		id: "aggressive",
-		label: "Heavy",
-		description: "For noisy or complex mixes that need stronger extraction.",
-		modelLabel: "Kim_Vocal_2.onnx",
-		modelFilenames: ["Kim_Vocal_2.onnx"],
-		note: "hard pull for dense or ugly mixes",
 	},
 ];
 

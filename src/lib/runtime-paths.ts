@@ -13,6 +13,7 @@ export interface StemmerRuntimePathOverrides {
 
 export interface StemmerRuntimePaths {
 	bundledModelsRoot?: string;
+	ffmpegDir?: string;
 	jobsRoot: string;
 	modelsRoot: string;
 	projectRoot: string;
@@ -59,6 +60,7 @@ export function getStemmerRuntimePaths(): StemmerRuntimePaths {
 		bundledModelsRoot:
 			pathOverrides.bundledModelsRoot ??
 			resolveBundledModelsRoot(resourcesRoot),
+		ffmpegDir: resolveBundledFfmpegDir(resourcesRoot),
 		jobsRoot: path.join(runtimeRoot, "jobs"),
 		modelsRoot: path.join(runtimeRoot, "models"),
 		projectRoot,
@@ -74,6 +76,11 @@ export function getStemmerRuntimePaths(): StemmerRuntimePaths {
 
 function resolveBundledModelsRoot(resourcesRoot: string) {
 	const candidate = path.join(resourcesRoot, "models");
+	return existsSync(candidate) ? candidate : undefined;
+}
+
+function resolveBundledFfmpegDir(resourcesRoot: string) {
+	const candidate = path.join(resourcesRoot, "bin");
 	return existsSync(candidate) ? candidate : undefined;
 }
 
