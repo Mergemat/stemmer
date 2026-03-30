@@ -1,6 +1,6 @@
 import { useId, useRef } from "react";
-import { type PlaybackTimeStore, usePlaybackTime } from "./playbackTimeStore";
-import { usePointerSeek } from "./usePointerSeek";
+import { type PlaybackTimeStore, usePlaybackTime } from "./playback-time-store";
+import { usePointerSeek } from "./use-pointer-seek";
 
 interface Props {
 	accent?: string;
@@ -27,9 +27,13 @@ function WaveformDisplay({
 	const containerRef = useRef<HTMLDivElement>(null);
 	const clipPathId = useId().replace(/:/g, "");
 	const strokeWidth = compact ? 0.8 : 0.9;
-	const playhead = duration > 0 ? Math.min(1, Math.max(0, currentTime / duration)) : 0;
+	const playhead =
+		duration > 0 ? Math.min(1, Math.max(0, currentTime / duration)) : 0;
 	const waveformPath = buildWaveformPath(peaks);
-	const { isScrubbing, ...pointerHandlers } = usePointerSeek(containerRef, onSeek);
+	const { isScrubbing, ...pointerHandlers } = usePointerSeek(
+		containerRef,
+		onSeek
+	);
 
 	if (!peaks.length || duration <= 0) {
 		return (

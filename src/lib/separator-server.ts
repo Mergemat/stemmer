@@ -32,6 +32,29 @@ const AUDIO_SEPARATOR_BIN = path.join(
 const RUNTIME_PYTHON_BIN = path.join(PROJECT_ROOT, ".venv/bin/python");
 const MIN_SUPPORTED_PYTHON_MINOR = 11;
 const MAX_SUPPORTED_PYTHON_MINOR = 13;
+const FILE_EXTENSION_PATTERN = /\.[^.]+$/;
+const LINE_BREAK_PATTERN = /[\r\n]+/;
+const AUDIO_FILE_PATTERN = /\.(wav|flac|mp3|m4a)$/i;
+const NON_ALPHANUMERIC_PATTERN = /[^a-z0-9]+/g;
+const ANSI_ESCAPE_PATTERN = new RegExp(
+	`${String.fromCharCode(27)}\\[[0-9;]*[A-Za-z]`,
+	"g"
+);
+const PYTHON_VERSION_PATTERN = /^(\d+)\.(\d+)$/;
+const TQDM_PROGRESS_PATTERN = /(^|\s)(\d{1,3})%\|/;
+const DOWNLOAD_MODEL_PATTERN = /Downloading model /i;
+const MODEL_DOWNLOADED_PATTERN = /Model downloaded/i;
+const LOADING_MODEL_PATTERN = /Loading model /i;
+const LOADING_ROFORMER_PATTERN = /Loading Roformer model/i;
+const INITIALISATION_COMPLETE_PATTERN = /initialisation complete/i;
+const LOAD_DURATION_PATTERN = /Load model duration:/i;
+const PROCESSING_FILE_PATTERN = /Processing file:/i;
+const STARTING_PROCESS_PATTERN = /Starting separation process/i;
+const SAVING_STEM_PATTERN = /Saving .* stem to /i;
+const SEPARATION_DURATION_PATTERN = /Separation duration:/i;
+const TOKEN_SPLIT_PATTERN = /[^a-z0-9]+/g;
+const REPEATED_SEPARATOR_PATTERN = /[_-]+/g;
+const INVALID_FILE_NAME_PATTERN = /[^a-zA-Z0-9._-]/g;
 
 let runtimeValidationPromise: Promise<void> | null = null;
 
@@ -182,7 +205,7 @@ export async function runRepairJob(args: {
 	}
 
 	emitProgress({ progress: 94, label: "Writing repaired vocal..." });
-	const outputFileName = `repaired-${sanitizeFileName(args.file.name).replace(/\.[^.]+$/, "")}.wav`;
+	const outputFileName = `repaired-${sanitizeFileName(args.file.name).replace(FILE_EXTENSION_PATTERN, "")}.wav`;
 	await copyFile(currentInputPath, path.join(job.dir, outputFileName));
 	emitProgress({ progress: 98, label: "Repair output ready." });
 
@@ -317,7 +340,7 @@ async function spawnSeparator(args: {
 			output += text;
 			lineBuffer += text;
 
-			const parts = lineBuffer.split(/[\r\n]+/);
+			const parts = lineBuffer.split(LINE_BREAK_PATTERN);
 			lineBuffer = parts.pop() ?? "";
 
 			for (const part of parts) {
@@ -377,9 +400,7 @@ function getModelArgs(modelFilename: string) {
 async function listAudioFiles(dir: string) {
 	const entries = await readdir(dir, { withFileTypes: true });
 	return entries
-		.filter(
-			(entry) => entry.isFile() && /\.(wav|flac|mp3|m4a)$/i.test(entry.name)
-		)
+		.filter((entry) => entry.isFile() && AUDIO_FILE_PATTERN.test(entry.name))
 		.map((entry) => entry.name);
 }
 
@@ -393,7 +414,7 @@ function findOutputFile(files: string[], terms: string[]) {
 }
 
 function normalizeStemToken(value: string) {
-	return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+	return value.toLowerCase().replace(NON_ALPHANUMERIC_PATTERN, "");
 }
 
 export function getGeneratedStemCandidates(
@@ -409,7 +430,7 @@ function tokenizeStemName(value: string) {
 	return path
 		.basename(value, path.extname(value))
 		.toLowerCase()
-		.split(/[^a-z0-9]+/g)
+		.split(TOKEN_SPLIT_PATTERN)
 		.filter(Boolean);
 }
 
@@ -491,7 +512,7 @@ function scoreStemAlias(
 	let score = compactName.includes(normalizedTerm) ? compactWeight : 0;
 	const termTokens = term
 		.toLowerCase()
-		.split(/[^a-z0-9]+/g)
+		.split(TOKEN_SPLIT_PATTERN)
 		.filter(Boolean);
 
 	if (termTokens.length > 0 && containsTokenSequence(tokens, termTokens)) {
@@ -523,7 +544,7 @@ function containsTokenSequence(tokens: string[], sequence: string[]) {
 	return false;
 }
 
-async function ensureRuntime() {
+function ensureRuntime() {
 	if (!runtimeValidationPromise) {
 		runtimeValidationPromise = validateRuntime();
 	}
@@ -563,7 +584,7 @@ async function deleteModelIfPresent(modelFilename: string) {
 	}
 }
 
-async function readPythonVersion() {
+function readPythonVersion() {
 	return new Promise<{ major: number; minor: number }>((resolve, reject) => {
 		const child = spawn(
 			RUNTIME_PYTHON_BIN,
@@ -600,7 +621,7 @@ async function readPythonVersion() {
 				return;
 			}
 
-			const match = stdout.trim().match(/^(\d+)\.(\d+)$/);
+			const match = stdout.trim().match(PYTHON_VERSION_PATTERN);
 			if (!match) {
 				reject(new Error("Failed to parse Python runtime version."));
 				return;
@@ -644,7 +665,7 @@ function isCorruptModelError(message: string) {
 }
 
 function sanitizeFileName(fileName: string) {
-	return fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+	return fileName.replace(INVALID_FILE_NAME_PATTERN, "_");
 }
 
 function buildOutputUrl(jobId: string, fileName: string) {
@@ -671,7 +692,7 @@ function createProgressEmitter(
 	onProgress?: (update: ProcessProgressUpdate) => void
 ) {
 	if (!onProgress) {
-		return () => {};
+		return () => undefined;
 	}
 
 	let lastProgress = 0;
@@ -690,12 +711,12 @@ function createProgressEmitter(
 }
 
 function parseSeparatorProgress(rawLine: string): ProcessProgressUpdate | null {
-	const line = rawLine.replace(/\u001B\[[0-9;]*[A-Za-z]/g, "").trim();
+	const line = rawLine.replace(ANSI_ESCAPE_PATTERN, "").trim();
 	if (!line) {
 		return null;
 	}
 
-	const tqdmMatch = line.match(/(^|\s)(\d{1,3})%\|/);
+	const tqdmMatch = line.match(TQDM_PROGRESS_PATTERN);
 	if (tqdmMatch) {
 		return {
 			progress: 42 + Math.round((Number(tqdmMatch[2]) / 100) * 42),
@@ -703,37 +724,37 @@ function parseSeparatorProgress(rawLine: string): ProcessProgressUpdate | null {
 		};
 	}
 
-	if (/Downloading model /i.test(line)) {
+	if (DOWNLOAD_MODEL_PATTERN.test(line)) {
 		return { progress: 14, label: "Downloading separation model..." };
 	}
 
-	if (/Model downloaded/i.test(line)) {
+	if (MODEL_DOWNLOADED_PATTERN.test(line)) {
 		return { progress: 26, label: "Model downloaded. Initializing..." };
 	}
 
-	if (/Loading model /i.test(line) || /Loading Roformer model/i.test(line)) {
+	if (LOADING_MODEL_PATTERN.test(line) || LOADING_ROFORMER_PATTERN.test(line)) {
 		return { progress: 30, label: "Loading separation model..." };
 	}
 
 	if (
-		/initialisation complete/i.test(line) ||
-		/Load model duration:/i.test(line)
+		INITIALISATION_COMPLETE_PATTERN.test(line) ||
+		LOAD_DURATION_PATTERN.test(line)
 	) {
 		return { progress: 40, label: "Model ready. Running separation..." };
 	}
 
 	if (
-		/Processing file:/i.test(line) ||
-		/Starting separation process/i.test(line)
+		PROCESSING_FILE_PATTERN.test(line) ||
+		STARTING_PROCESS_PATTERN.test(line)
 	) {
 		return { progress: 46, label: "Separating stems..." };
 	}
 
-	if (/Saving .* stem to /i.test(line)) {
+	if (SAVING_STEM_PATTERN.test(line)) {
 		return { progress: 88, label: "Writing output stems..." };
 	}
 
-	if (/Separation duration:/i.test(line)) {
+	if (SEPARATION_DURATION_PATTERN.test(line)) {
 		return { progress: 94, label: "Finalizing separated stems..." };
 	}
 
@@ -742,7 +763,7 @@ function parseSeparatorProgress(rawLine: string): ProcessProgressUpdate | null {
 
 function humanizeModelFilename(modelFilename: string) {
 	return modelFilename
-		.replace(/\.[^.]+$/, "")
-		.replace(/[_-]+/g, " ")
+		.replace(FILE_EXTENSION_PATTERN, "")
+		.replace(REPEATED_SEPARATOR_PATTERN, " ")
 		.trim();
 }

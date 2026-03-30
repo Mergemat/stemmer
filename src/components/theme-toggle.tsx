@@ -17,7 +17,11 @@ function getInitialMode(): ThemeMode {
 
 function applyThemeMode(mode: ThemeMode) {
 	const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-	const resolved = mode === "auto" ? (prefersDark ? "dark" : "light") : mode;
+	let resolved = mode;
+
+	if (mode === "auto") {
+		resolved = prefersDark ? "dark" : "light";
+	}
 
 	document.documentElement.classList.remove("light", "dark");
 	document.documentElement.classList.add(resolved);
@@ -55,12 +59,21 @@ export default function ThemeToggle() {
 	}, [mode]);
 
 	function toggleMode() {
-		const nextMode: ThemeMode =
-			mode === "light" ? "dark" : mode === "dark" ? "auto" : "light";
+		let nextMode: ThemeMode;
+		if (mode === "light") {
+			nextMode = "dark";
+		} else if (mode === "dark") {
+			nextMode = "auto";
+		} else {
+			nextMode = "light";
+		}
+
 		setMode(nextMode);
 		applyThemeMode(nextMode);
 		window.localStorage.setItem("theme", nextMode);
 	}
+
+	const buttonText = getThemeModeLabel(mode);
 
 	const label =
 		mode === "auto"
@@ -75,7 +88,19 @@ export default function ThemeToggle() {
 			title={label}
 			type="button"
 		>
-			{mode === "auto" ? "Auto" : mode === "dark" ? "Dark" : "Light"}
+			{buttonText}
 		</button>
 	);
+}
+
+function getThemeModeLabel(mode: ThemeMode) {
+	if (mode === "auto") {
+		return "Auto";
+	}
+
+	if (mode === "dark") {
+		return "Dark";
+	}
+
+	return "Light";
 }

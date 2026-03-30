@@ -35,38 +35,21 @@ export async function processWithStream(args: {
 		}
 
 		buffer += decoder.decode(value, { stream: true });
-		const lines = buffer.split("\n");
-		buffer = lines.pop() ?? "";
-
-		for (const line of lines) {
-			if (!line.trim()) {
-				continue;
-			}
-
-			const event = JSON.parse(line) as ProcessStreamEvent;
-			if (event.type === "status") {
-				args.onStatus?.(event);
-				continue;
-			}
-
-			if (event.type === "complete") {
-				result = event.payload;
-				continue;
-			}
-
-			streamError = event.error;
-		}
+		({ buffer, result, streamError } = flushProcessBuffer(
+			buffer,
+			args.onStatus,
+			result,
+			streamError
+		));
 	}
 
 	if (buffer.trim()) {
-		const event = JSON.parse(buffer) as ProcessStreamEvent;
-		if (event.type === "status") {
-			args.onStatus?.(event);
-		} else if (event.type === "complete") {
-			result = event.payload;
-		} else {
-			streamError = event.error;
-		}
+		({ result, streamError } = applyProcessEvent(
+			JSON.parse(buffer) as ProcessStreamEvent,
+			args.onStatus,
+			result,
+			streamError
+		));
 	}
 
 	if (streamError) {
@@ -82,4 +65,53 @@ export async function processWithStream(args: {
 	}
 
 	return result;
+}
+
+function flushProcessBuffer(
+	buffer: string,
+	onStatus: ((event: ProcessStatusEvent) => void) | undefined,
+	result: ProcessResult | null,
+	streamError: string | null
+) {
+	const lines = buffer.split("\n");
+	const nextBuffer = lines.pop() ?? "";
+	let nextResult = result;
+	let nextStreamError = streamError;
+
+	for (const line of lines) {
+		if (!line.trim()) {
+			continue;
+		}
+
+		({ result: nextResult, streamError: nextStreamError } = applyProcessEvent(
+			JSON.parse(line) as ProcessStreamEvent,
+			onStatus,
+			nextResult,
+			nextStreamError
+		));
+	}
+
+	return {
+		buffer: nextBuffer,
+		result: nextResult,
+		streamError: nextStreamError,
+	};
+}
+
+function applyProcessEvent(
+	event: ProcessStreamEvent,
+	onStatus: ((event: ProcessStatusEvent) => void) | undefined,
+	result: ProcessResult | null,
+	streamError: string | null
+) {
+	if (event.type === "status") {
+		onStatus?.(event);
+		return { result, streamError };
+	}
+
+	if (event.type === "complete") {
+		return { result: event.payload, streamError };
+	}
+
+	return { result, streamError: event.error };
 }

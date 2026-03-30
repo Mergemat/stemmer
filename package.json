@@ -36,7 +36,6 @@
     "tailwindcss": "^4.1.18",
     "tone": "^15.1.22",
     "tw-animate-css": "^1.3.6",
-    "wavesurfer.js": "^7.12.5",
     "zod": "^4.3.6"
   },
   "devDependencies": {
