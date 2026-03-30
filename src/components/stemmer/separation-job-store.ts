@@ -19,7 +19,8 @@ export function createSeparationJobStore(initialJob: SeparationJob) {
 			if (
 				currentJob.phase === nextJob.phase &&
 				currentJob.progress === nextJob.progress &&
-				currentJob.label === nextJob.label
+				currentJob.label === nextJob.label &&
+				currentJob.details === nextJob.details
 			) {
 				return;
 			}

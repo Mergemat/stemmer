@@ -8,11 +8,20 @@ import {
 	readdir,
 	readFile,
 	stat,
-	unlink,
 	writeFile,
 } from "node:fs/promises";
 import path from "node:path";
-import type { ProcessProgressUpdate } from "#/lib/process-types";
+import { performance } from "node:perf_hooks";
+import type {
+	ProcessProgressUpdate,
+	RepairProcessBenchmarks,
+	RepairProcessStepBenchmark,
+	StemProcessBenchmarks,
+} from "#/lib/process-types";
+import {
+	prewarmPersistentWorker,
+	runModelInPersistentWorker,
+} from "#/lib/separator-worker-manager";
 import {
 	getRepairPreset,
 	getSeparationPreset,
@@ -26,40 +35,24 @@ const RUNTIME_ROOT = path.join(PROJECT_ROOT, ".stemmer-runtime");
 const JOBS_ROOT = path.join(RUNTIME_ROOT, "jobs");
 const MODELS_ROOT = path.join(RUNTIME_ROOT, "models");
 const STEM_JOB_CACHE_FILE = path.join(RUNTIME_ROOT, "stem-cache.json");
-const AUDIO_SEPARATOR_BIN = path.join(
-	PROJECT_ROOT,
-	".venv/bin/audio-separator"
-);
-const RUNTIME_PYTHON_BIN = path.join(PROJECT_ROOT, ".venv/bin/python");
+const RUNTIME_PYTHON_BIN =
+	process.platform === "win32"
+		? path.join(PROJECT_ROOT, ".venv", "Scripts", "python.exe")
+		: path.join(PROJECT_ROOT, ".venv", "bin", "python");
 const MIN_SUPPORTED_PYTHON_MINOR = 11;
 const MAX_SUPPORTED_PYTHON_MINOR = 13;
 const FILE_EXTENSION_PATTERN = /\.[^.]+$/;
-const LINE_BREAK_PATTERN = /[\r\n]+/;
 const AUDIO_FILE_PATTERN = /\.(wav|flac|mp3|m4a)$/i;
 const NON_ALPHANUMERIC_PATTERN = /[^a-z0-9]+/g;
-const ANSI_ESCAPE_PATTERN = new RegExp(
-	`${String.fromCharCode(27)}\\[[0-9;]*[A-Za-z]`,
-	"g"
-);
 const PYTHON_VERSION_PATTERN = /^(\d+)\.(\d+)$/;
-const TQDM_PROGRESS_PATTERN = /(^|\s)(\d{1,3})%\|/;
-const DOWNLOAD_MODEL_PATTERN = /Downloading model /i;
-const MODEL_DOWNLOADED_PATTERN = /Model downloaded/i;
-const LOADING_MODEL_PATTERN = /Loading model /i;
-const LOADING_ROFORMER_PATTERN = /Loading Roformer model/i;
-const INITIALISATION_COMPLETE_PATTERN = /initialisation complete/i;
-const LOAD_DURATION_PATTERN = /Load model duration:/i;
-const PROCESSING_FILE_PATTERN = /Processing file:/i;
-const STARTING_PROCESS_PATTERN = /Starting separation process/i;
-const SAVING_STEM_PATTERN = /Saving .* stem to /i;
-const SEPARATION_DURATION_PATTERN = /Separation duration:/i;
 const TOKEN_SPLIT_PATTERN = /[^a-z0-9]+/g;
-const REPEATED_SEPARATOR_PATTERN = /[_-]+/g;
 const INVALID_FILE_NAME_PATTERN = /[^a-zA-Z0-9._-]/g;
 
 let runtimeValidationPromise: Promise<void> | null = null;
+const preferredModelByChain = new Map<string, string>();
 
 interface StemJobResult {
+	benchmarks: StemProcessBenchmarks;
 	jobId: string;
 	outputs: Array<{
 		id: "vocals" | "instrumental";
@@ -82,6 +75,7 @@ interface StemJobCacheEntry {
 }
 
 interface RepairJobResult {
+	benchmarks: RepairProcessBenchmarks;
 	jobId: string;
 	modelsUsed: string[];
 	outputFileName: string;
@@ -95,6 +89,7 @@ export async function runStemJob(args: {
 	presetId: SeparationPresetId;
 	onProgress?: (update: ProcessProgressUpdate) => void;
 }) {
+	const startedAt = performance.now();
 	const preset = getSeparationPreset(args.presetId);
 	if (!preset) {
 		throw new Error(`Unknown separation preset: ${args.presetId}`);
@@ -114,13 +109,15 @@ export async function runStemJob(args: {
 
 	const job = await createJobDir();
 	const inputPath = path.join(job.dir, sanitizeFileName(args.file.name));
+	const inputWriteStartedAt = performance.now();
 	await writeFile(inputPath, Buffer.from(await args.file.arrayBuffer()));
+	const inputWriteMs = roundMs(performance.now() - inputWriteStartedAt);
 	emitProgress({
 		progress: 6,
 		label: "Source audio ready. Starting separator...",
 	});
 
-	await runAudioSeparator({
+	const separatorRun = await runAudioSeparator({
 		modelFilenames: preset.modelFilenames,
 		inputPath,
 		outputDir: job.dir,
@@ -128,6 +125,7 @@ export async function runStemJob(args: {
 	});
 
 	emitProgress({ progress: 90, label: "Collecting stem files..." });
+	const outputCollectStartedAt = performance.now();
 	const audioFiles = await listAudioFiles(job.dir);
 	const stemCandidates = getGeneratedStemCandidates(
 		audioFiles,
@@ -146,9 +144,16 @@ export async function runStemJob(args: {
 			label: stem.label,
 		};
 	});
+	const outputCollectMs = roundMs(performance.now() - outputCollectStartedAt);
 
 	emitProgress({ progress: 96, label: "Stem files ready." });
 	const result = {
+		benchmarks: {
+			...separatorRun.metrics,
+			inputWriteMs,
+			outputCollectMs,
+			totalMs: roundMs(performance.now() - startedAt),
+		},
 		jobId: job.id,
 		sourceFileName: path.basename(inputPath),
 		outputs,
@@ -161,11 +166,24 @@ export async function runStemJob(args: {
 	return result;
 }
 
+export async function prewarmFastStemModel() {
+	await ensureRuntime();
+
+	const fastPreset = getSeparationPreset("fast");
+	const modelFilename = fastPreset?.modelFilenames[0];
+	if (!modelFilename) {
+		throw new Error("Fast separation preset is not configured.");
+	}
+
+	await prewarmPersistentWorker(modelFilename);
+}
+
 export async function runRepairJob(args: {
 	file: File;
 	presetId: RepairPresetId;
 	onProgress?: (update: ProcessProgressUpdate) => void;
 }) {
+	const startedAt = performance.now();
 	const preset = getRepairPreset(args.presetId);
 	if (!preset) {
 		throw new Error(`Unknown repair preset: ${args.presetId}`);
@@ -176,13 +194,16 @@ export async function runRepairJob(args: {
 
 	const job = await createJobDir();
 	const inputPath = path.join(job.dir, sanitizeFileName(args.file.name));
+	const inputWriteStartedAt = performance.now();
 	await writeFile(inputPath, Buffer.from(await args.file.arrayBuffer()));
+	const inputWriteMs = roundMs(performance.now() - inputWriteStartedAt);
 	emitProgress({
 		progress: 6,
 		label: "Source vocal ready. Starting repair...",
 	});
 
 	let currentInputPath = inputPath;
+	const benchmarks: RepairProcessStepBenchmark[] = [];
 	const modelsUsed: string[] = [];
 	const totalSteps = preset.steps.length;
 
@@ -197,7 +218,7 @@ export async function runRepairJob(args: {
 			label: `Running ${step.modelLabel}...`,
 		});
 
-		await runAudioSeparator({
+		const separatorRun = await runAudioSeparator({
 			modelFilenames: [step.modelFilename],
 			inputPath: currentInputPath,
 			outputDir: stepDir,
@@ -210,6 +231,10 @@ export async function runRepairJob(args: {
 					label: `Running ${step.modelLabel}...`,
 				});
 			},
+		});
+		benchmarks.push({
+			...separatorRun.metrics,
+			stepLabel: step.modelLabel,
 		});
 
 		const audioFiles = await listAudioFiles(stepDir);
@@ -234,10 +259,18 @@ export async function runRepairJob(args: {
 
 	emitProgress({ progress: 94, label: "Writing repaired vocal..." });
 	const outputFileName = `repaired-${sanitizeFileName(args.file.name).replace(FILE_EXTENSION_PATTERN, "")}.wav`;
+	const outputWriteStartedAt = performance.now();
 	await copyFile(currentInputPath, path.join(job.dir, outputFileName));
+	const outputWriteMs = roundMs(performance.now() - outputWriteStartedAt);
 	emitProgress({ progress: 98, label: "Repair output ready." });
 
 	return {
+		benchmarks: {
+			inputWriteMs,
+			outputWriteMs,
+			steps: benchmarks,
+			totalMs: roundMs(performance.now() - startedAt),
+		},
 		jobId: job.id,
 		sourceFileName: path.basename(inputPath),
 		outputFileName,
@@ -300,6 +333,21 @@ async function readCachedStemJob(
 	}
 
 	return {
+		benchmarks: {
+			backend: "cache",
+			inputWriteMs: 0,
+			modelFilename: "cache",
+			modelLoadMs: 0,
+			outputCollectMs: 0,
+			provider: "cache",
+			reusedWorker: true,
+			separationMs: 0,
+			totalMs: 0,
+			torchDevice: "cache",
+			workerAcquireMs: 0,
+			workerPid: 0,
+			workerStartupMs: 0,
+		},
 		jobId: cachedJob.jobId,
 		sourceFileName: cachedJob.sourceFileName,
 		outputs: cachedJob.outputs.map((output) => ({
@@ -359,7 +407,10 @@ async function hasCachedStemFiles(entry: StemJobCacheEntry) {
 	try {
 		await Promise.all(
 			entry.outputs.map((output) =>
-				access(path.join(JOBS_ROOT, entry.jobId, output.fileName), constants.R_OK)
+				access(
+					path.join(JOBS_ROOT, entry.jobId, output.fileName),
+					constants.R_OK
+				)
 			)
 		);
 		return true;
@@ -376,23 +427,41 @@ async function runAudioSeparator(args: {
 }) {
 	await ensureRuntime();
 
+	const orderedModelFilenames = prioritizeModelFilenames(args.modelFilenames);
 	let lastError: Error | null = null;
 
-	for (const modelFilename of args.modelFilenames) {
+	for (const modelFilename of orderedModelFilenames) {
 		args.onProgress?.({
 			progress: 12,
 			label: `Loading ${humanizeModelFilename(modelFilename)}...`,
 		});
 
 		try {
-			await runSingleModel({
+			const workerAcquireStartedAt = performance.now();
+			const result = await runModelInPersistentWorker({
 				modelFilename,
 				inputPath: args.inputPath,
+				onStatus: args.onProgress,
 				outputDir: args.outputDir,
-				onProgress: args.onProgress,
 			});
+			const workerAcquireMs = roundMs(
+				performance.now() - workerAcquireStartedAt
+			);
 
-			return;
+			if (result.metrics.reusedWorker) {
+				args.onProgress?.({
+					progress: 40,
+					label: "Warm model ready. Running separation...",
+				});
+			}
+			rememberPreferredModel(args.modelFilenames, modelFilename);
+
+			return {
+				metrics: {
+					...result.metrics,
+					workerAcquireMs,
+				},
+			};
 		} catch (error) {
 			lastError =
 				error instanceof Error
@@ -407,114 +476,40 @@ async function runAudioSeparator(args: {
 	);
 }
 
-async function runSingleModel(args: {
-	modelFilename: string;
-	inputPath: string;
-	outputDir: string;
-	onProgress?: (update: ProcessProgressUpdate) => void;
-}) {
-	try {
-		await spawnSeparator(args);
-	} catch (error) {
-		if (error instanceof Error && isCorruptModelError(error.message)) {
-			await deleteModelIfPresent(args.modelFilename);
-			await spawnSeparator(args);
-			return;
-		}
-
-		throw error;
+function prioritizeModelFilenames(modelFilenames: string[]) {
+	if (modelFilenames.length < 2) {
+		return modelFilenames;
 	}
-}
 
-async function spawnSeparator(args: {
-	modelFilename: string;
-	inputPath: string;
-	outputDir: string;
-	onProgress?: (update: ProcessProgressUpdate) => void;
-}) {
-	const cliArgs = [
-		"-m",
-		args.modelFilename,
-		"--output_format",
-		"WAV",
-		"--output_dir",
-		args.outputDir,
-		"--model_file_dir",
-		MODELS_ROOT,
-		"--log_level",
-		"info",
-		...getModelArgs(args.modelFilename),
-		args.inputPath,
+	const preferred = preferredModelByChain.get(
+		createModelChainKey(modelFilenames)
+	);
+	if (!(preferred && modelFilenames.includes(preferred))) {
+		return modelFilenames;
+	}
+
+	return [
+		preferred,
+		...modelFilenames.filter((modelFilename) => modelFilename !== preferred),
 	];
-
-	await new Promise<void>((resolve, reject) => {
-		const child = spawn(AUDIO_SEPARATOR_BIN, cliArgs, {
-			cwd: PROJECT_ROOT,
-			env: process.env,
-		});
-
-		let output = "";
-		let lineBuffer = "";
-		const handleChunk = (chunk: Buffer) => {
-			const text = chunk.toString();
-			output += text;
-			lineBuffer += text;
-
-			const parts = lineBuffer.split(LINE_BREAK_PATTERN);
-			lineBuffer = parts.pop() ?? "";
-
-			for (const part of parts) {
-				const update = parseSeparatorProgress(part);
-				if (update) {
-					args.onProgress?.(update);
-				}
-			}
-		};
-
-		child.stdout.on("data", (chunk) => {
-			handleChunk(chunk);
-		});
-
-		child.stderr.on("data", (chunk) => {
-			handleChunk(chunk);
-		});
-
-		child.on("error", reject);
-		child.on("close", (code) => {
-			const trailingUpdate = parseSeparatorProgress(lineBuffer);
-			if (trailingUpdate) {
-				args.onProgress?.(trailingUpdate);
-			}
-
-			if (code === 0) {
-				resolve();
-				return;
-			}
-
-			reject(
-				new Error(
-					output.trim() ||
-						`audio-separator failed with exit code ${code} for ${args.modelFilename}`
-				)
-			);
-		});
-	});
 }
 
-function getModelArgs(modelFilename: string) {
-	if (modelFilename.endsWith(".onnx")) {
-		return ["--mdx_segment_size", "256", "--mdx_overlap", "0.25"];
+function rememberPreferredModel(
+	modelFilenames: string[],
+	succeededModelFilename: string
+) {
+	if (modelFilenames.length < 2) {
+		return;
 	}
 
-	if (modelFilename.endsWith(".pth")) {
-		return ["--vr_window_size", "320", "--vr_aggression", "5"];
-	}
+	preferredModelByChain.set(
+		createModelChainKey(modelFilenames),
+		succeededModelFilename
+	);
+}
 
-	if (modelFilename.endsWith(".ckpt")) {
-		return ["--mdxc_segment_size", "256", "--mdxc_overlap", "8"];
-	}
-
-	return [];
+function createModelChainKey(modelFilenames: string[]) {
+	return modelFilenames.join("|");
 }
 
 async function listAudioFiles(dir: string) {
@@ -674,7 +669,6 @@ function ensureRuntime() {
 
 async function validateRuntime() {
 	try {
-		await access(AUDIO_SEPARATOR_BIN, constants.X_OK);
 		await access(RUNTIME_PYTHON_BIN, constants.X_OK);
 	} catch {
 		throw new Error(
@@ -691,16 +685,6 @@ async function validateRuntime() {
 		throw new Error(
 			`Unsupported Python runtime ${version.major}.${version.minor}. Recreate \`.venv\` with Python 3.11, 3.12, or 3.13.`
 		);
-	}
-}
-
-async function deleteModelIfPresent(modelFilename: string) {
-	try {
-		await unlink(path.join(MODELS_ROOT, modelFilename));
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") {
-			throw error;
-		}
 	}
 }
 
@@ -830,60 +814,13 @@ function createProgressEmitter(
 	};
 }
 
-function parseSeparatorProgress(rawLine: string): ProcessProgressUpdate | null {
-	const line = rawLine.replace(ANSI_ESCAPE_PATTERN, "").trim();
-	if (!line) {
-		return null;
-	}
-
-	const tqdmMatch = line.match(TQDM_PROGRESS_PATTERN);
-	if (tqdmMatch) {
-		return {
-			progress: 42 + Math.round((Number(tqdmMatch[2]) / 100) * 42),
-			label: "Separating stems...",
-		};
-	}
-
-	if (DOWNLOAD_MODEL_PATTERN.test(line)) {
-		return { progress: 14, label: "Downloading separation model..." };
-	}
-
-	if (MODEL_DOWNLOADED_PATTERN.test(line)) {
-		return { progress: 26, label: "Model downloaded. Initializing..." };
-	}
-
-	if (LOADING_MODEL_PATTERN.test(line) || LOADING_ROFORMER_PATTERN.test(line)) {
-		return { progress: 30, label: "Loading separation model..." };
-	}
-
-	if (
-		INITIALISATION_COMPLETE_PATTERN.test(line) ||
-		LOAD_DURATION_PATTERN.test(line)
-	) {
-		return { progress: 40, label: "Model ready. Running separation..." };
-	}
-
-	if (
-		PROCESSING_FILE_PATTERN.test(line) ||
-		STARTING_PROCESS_PATTERN.test(line)
-	) {
-		return { progress: 46, label: "Separating stems..." };
-	}
-
-	if (SAVING_STEM_PATTERN.test(line)) {
-		return { progress: 88, label: "Writing output stems..." };
-	}
-
-	if (SEPARATION_DURATION_PATTERN.test(line)) {
-		return { progress: 94, label: "Finalizing separated stems..." };
-	}
-
-	return null;
-}
-
 function humanizeModelFilename(modelFilename: string) {
 	return modelFilename
 		.replace(FILE_EXTENSION_PATTERN, "")
-		.replace(REPEATED_SEPARATOR_PATTERN, " ")
+		.replace(/[_-]+/g, " ")
 		.trim();
+}
+
+function roundMs(value: number) {
+	return Math.round(value * 10) / 10;
 }

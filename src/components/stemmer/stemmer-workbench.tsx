@@ -10,6 +10,7 @@ import {
 import { Gain, now, Player, start } from "tone";
 import { Button } from "#/components/ui/button";
 import { processWithStream } from "#/lib/process-client";
+import type { StemProcessBenchmarks } from "#/lib/process-types";
 import {
 	createDefaultStemState,
 	createFingerprint,
@@ -39,6 +40,7 @@ import {
 import WaveformLanes from "./waveform-lanes";
 
 const INITIAL_JOB: SeparationJob = {
+	details: undefined,
 	phase: "idle",
 	progress: 0,
 	label: "Upload a song to get started.",
@@ -109,7 +111,12 @@ export default function StemmerWorkbench() {
 		}
 
 		setIsDecoding(true);
-		setJob({ phase: "idle", progress: 0, label: "Reading your file..." });
+		setJob({
+			details: undefined,
+			phase: "idle",
+			progress: 0,
+			label: "Reading your file...",
+		});
 
 		try {
 			const sourceUrl = URL.createObjectURL(file);
@@ -137,12 +144,14 @@ export default function StemmerWorkbench() {
 			});
 
 			setJob({
+				details: undefined,
 				phase: "idle",
 				progress: 0,
 				label: "Ready to separate.",
 			});
 		} catch (error) {
 			setJob({
+				details: undefined,
 				phase: "idle",
 				progress: 0,
 				label:
@@ -163,6 +172,7 @@ export default function StemmerWorkbench() {
 		desiredTimeRef.current = 0;
 		playbackTimeStoreRef.current.set(0);
 		setJob({
+			details: undefined,
 			phase: "running",
 			progress: 1,
 			label: "Preparing separation...",
@@ -179,6 +189,7 @@ export default function StemmerWorkbench() {
 				formData,
 				onStatus: (event) => {
 					setJob({
+						details: undefined,
 						phase: "running",
 						progress: event.progress,
 						label: event.label,
@@ -191,12 +202,14 @@ export default function StemmerWorkbench() {
 			}
 
 			setJob({
+				details: undefined,
 				phase: "running",
 				progress: 90,
 				label: "Loading separated stems...",
 			});
 
 			setJob({
+				details: undefined,
 				phase: "running",
 				progress: 94,
 				label: "Decoding separated stems...",
@@ -240,12 +253,14 @@ export default function StemmerWorkbench() {
 			});
 
 			setJob({
+				details: formatBenchmarks(payload.benchmarks),
 				phase: "complete",
 				progress: 100,
 				label: "Done! Hit play to listen.",
 			});
 		} catch (error) {
 			setJob({
+				details: undefined,
 				phase: "idle",
 				progress: 0,
 				label:
@@ -560,48 +575,16 @@ export default function StemmerWorkbench() {
 			return;
 		}
 
-		const action = resolveShortcutAction(
-			event,
-			PRESET_IDS
-		);
+		const action = resolveShortcutAction(event, PRESET_IDS);
 		if (!action) {
 			return;
 		}
 
-		switch (action.type) {
-			case "togglePlayback":
-				if (!(track?.stemBuffers.vocals && track.stemBuffers.instrumental)) {
-					return;
-				}
-
-				event.preventDefault();
-				void togglePlayback();
-				return;
-			case "runPreview":
-				if (!track || jobPhase === "running") {
-					return;
-				}
-
-				event.preventDefault();
-				void runPreview();
-				return;
-			case "seek":
-				if (!(track && jobPhase === "complete")) {
-					return;
-				}
-
-				event.preventDefault();
-				seekBy(action.deltaSeconds);
-				return;
-			case "selectPreset":
-				if (jobPhase === "running") {
-					return;
-				}
-
-				event.preventDefault();
-				setSelectedPresetId(action.presetId);
-				return;
+		if (!handleShortcutAction(action)) {
+			return;
 		}
+
+		event.preventDefault();
 	});
 
 	useEffect(() => {
@@ -609,7 +592,48 @@ export default function StemmerWorkbench() {
 		return () => {
 			window.removeEventListener("keydown", handleShortcutKeyDown);
 		};
-	}, [handleShortcutKeyDown]);
+	}, []);
+
+	function handleShortcutAction(
+		action: ReturnType<typeof resolveShortcutAction>
+	): boolean {
+		if (!action) {
+			return false;
+		}
+
+		switch (action.type) {
+			case "togglePlayback":
+				if (!(track?.stemBuffers.vocals && track.stemBuffers.instrumental)) {
+					return false;
+				}
+
+				togglePlayback().catch(() => undefined);
+				return true;
+			case "runPreview":
+				if (!track || jobPhase === "running") {
+					return false;
+				}
+
+				runPreview().catch(() => undefined);
+				return true;
+			case "seek":
+				if (!(track && jobPhase === "complete")) {
+					return false;
+				}
+
+				seekBy(action.deltaSeconds);
+				return true;
+			case "selectPreset":
+				if (jobPhase === "running") {
+					return false;
+				}
+
+				setSelectedPresetId(action.presetId);
+				return true;
+			default:
+				return false;
+		}
+	}
 
 	if (!track) {
 		return (
@@ -815,6 +839,19 @@ async function decodeUrl(url: string) {
 	} finally {
 		await context.close();
 	}
+}
+
+function formatBenchmarks(benchmarks: StemProcessBenchmarks) {
+	const warmness = benchmarks.reusedWorker ? "warm" : "cold";
+	return `${benchmarks.backend}/${warmness} ${benchmarks.provider} load ${formatDuration(benchmarks.modelLoadMs)} infer ${formatDuration(benchmarks.separationMs)} total ${formatDuration(benchmarks.totalMs)}`;
+}
+
+function formatDuration(milliseconds: number) {
+	if (milliseconds >= 1000) {
+		return `${(milliseconds / 1000).toFixed(1)}s`;
+	}
+
+	return `${Math.round(milliseconds)}ms`;
 }
 
 function readCache(): Record<string, CachedTrackRecord> {
