@@ -77,10 +77,10 @@ export function usePointerSeek<T extends HTMLElement>(
 
 	return {
 		isScrubbing,
-		handlePointerDown,
-		handlePointerMove,
-		handlePointerUp,
-		handlePointerCancel: handlePointerUp,
-		handleLostPointerCapture: stopScrubbing,
+		onPointerDown: handlePointerDown,
+		onPointerMove: handlePointerMove,
+		onPointerUp: handlePointerUp,
+		onPointerCancel: handlePointerUp,
+		onLostPointerCapture: stopScrubbing,
 	};
 }
