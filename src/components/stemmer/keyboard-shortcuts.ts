@@ -32,12 +32,12 @@ export function shouldHandleShortcutEvent(
 		return false;
 	}
 
-	const target =
-		event.target instanceof Element
-			? event.target
-			: document.activeElement instanceof Element
-				? document.activeElement
-				: null;
+	let target: Element | null = null;
+	if (event.target instanceof Element) {
+		target = event.target;
+	} else if (document.activeElement instanceof Element) {
+		target = document.activeElement;
+	}
 
 	if (!target) {
 		return true;

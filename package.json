@@ -9,8 +9,8 @@
     "dev": "vite dev --port 3000",
     "build": "vite build",
     "preview": "vite preview",
-    "setup:runtime": "rm -rf .venv && python3.11 -m venv .venv && .venv/bin/pip install -U pip && .venv/bin/pip install audio-separator==0.44.1 onnxruntime",
-    "runtime:doctor": ".venv/bin/python --version && .venv/bin/audio-separator --version",
+    "setup:runtime": "bun run scripts/setup-runtime.ts",
+    "runtime:doctor": "bun run scripts/runtime-doctor.ts",
     "test": "vitest run",
     "check": "ultracite check",
     "fix": "ultracite fix"

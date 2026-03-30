@@ -20,6 +20,7 @@ export interface TrackRecord {
 }
 
 export interface SeparationJob {
+	details?: string;
 	label: string;
 	phase: "idle" | "running" | "complete";
 	progress: number;

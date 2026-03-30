@@ -41,9 +41,9 @@ export const SEPARATION_PRESETS: Array<{
 		id: "fast",
 		label: "Quick",
 		description: "Fastest option. Good enough for previews.",
-		modelLabel: "UVR_MDXNET_KARA_2 / UVR-MDX-NET-Voc_FT",
-		modelFilenames: ["UVR_MDXNET_KARA_2.onnx", "UVR-MDX-NET-Voc_FT.onnx"],
-		note: "fastest practical preset on this stack with Voc_FT fallback",
+		modelLabel: "UVR-MDX-NET-Voc_FT.onnx",
+		modelFilenames: ["UVR-MDX-NET-Voc_FT.onnx"],
+		note: "lowest cold-start and warm-run latency on the current runtime",
 	},
 	{
 		id: "aggressive",

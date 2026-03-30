@@ -139,9 +139,16 @@ function Transport({
 				</ShortcutTooltip>
 
 				{/* Status */}
-				<span className="ml-auto rounded-md bg-white/[0.04] px-2.5 py-1 font-medium text-muted-foreground text-xs">
-					{friendlyLabel(job.label)}
-				</span>
+				<div className="ml-auto flex min-w-0 flex-col items-end gap-0.5">
+					<span className="max-w-[22rem] truncate rounded-md bg-white/[0.04] px-2.5 py-1 font-medium text-muted-foreground text-xs">
+						{friendlyLabel(job.label)}
+					</span>
+					{job.details ? (
+						<span className="max-w-[24rem] truncate font-medium text-[11px] text-muted-foreground/80">
+							{job.details}
+						</span>
+					) : null}
+				</div>
 			</div>
 		</div>
 	);

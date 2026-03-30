@@ -1,6 +1,44 @@
 import type { StemOutputId } from "#/lib/stemmer-models";
 
+export interface StemProcessBenchmarks {
+	backend: string;
+	inputWriteMs: number;
+	modelFilename: string;
+	modelLoadMs: number;
+	outputCollectMs: number;
+	provider: string;
+	reusedWorker: boolean;
+	separationMs: number;
+	torchDevice: string;
+	totalMs: number;
+	workerAcquireMs: number;
+	workerPid: number;
+	workerStartupMs: number;
+}
+
+export interface RepairProcessStepBenchmark {
+	backend: string;
+	modelFilename: string;
+	modelLoadMs: number;
+	provider: string;
+	reusedWorker: boolean;
+	separationMs: number;
+	stepLabel: string;
+	torchDevice: string;
+	workerAcquireMs: number;
+	workerPid: number;
+	workerStartupMs: number;
+}
+
+export interface RepairProcessBenchmarks {
+	inputWriteMs: number;
+	outputWriteMs: number;
+	steps: RepairProcessStepBenchmark[];
+	totalMs: number;
+}
+
 export interface StemProcessResult {
+	benchmarks: StemProcessBenchmarks;
 	jobId: string;
 	mode: "stem";
 	outputs: Array<{
@@ -13,6 +51,7 @@ export interface StemProcessResult {
 }
 
 export interface RepairProcessResult {
+	benchmarks: RepairProcessBenchmarks;
 	jobId: string;
 	mode: "repair";
 	modelsUsed: string[];

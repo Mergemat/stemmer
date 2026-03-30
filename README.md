@@ -15,13 +15,18 @@ Current scope is deliberate:
 
 ## Runtime
 
-The UI is Bun-based, but separation itself runs through a local Python worker.
+The UI is Bun-based, but separation itself runs through persistent local Python workers.
 
 Required:
 
 - Bun
 - Python 3.11, 3.12, or 3.13
 - `ffmpeg`
+
+Supported desktop platforms:
+
+- macOS
+- Windows
 
 ## Setup
 
@@ -38,6 +43,11 @@ bun run setup:runtime
 ```
 
 `audio-separator` downloads model files on first use into `.stemmer-runtime/models`.
+
+Runtime setup is platform-aware:
+
+- macOS installs the standard ONNX Runtime path used with CoreML execution providers when available
+- Windows installs DirectML packages for hardware acceleration
 
 Do not build the runtime on Python `3.14` right now. Roformer loading breaks there in the current `audio-separator` stack.
 
@@ -58,7 +68,7 @@ Stem separation:
 
 - `Best`: `BS-Roformer-Viperx-1297`
 - `Balanced`: `vocals_mel_band_roformer.ckpt`
-- `Fast`: `UVR_MDXNET_KARA_2.onnx` with `UVR-MDX-NET-Voc_FT.onnx` fallback
+- `Fast`: `UVR-MDX-NET-Voc_FT.onnx`
 - `Aggressive`: `Kim_Vocal_2.onnx`
 
 Vocal repair:
@@ -79,4 +89,6 @@ bun run build
 - `Balanced` models can return the accompaniment stem as `other`; the app normalizes that to the instrumental lane.
 - Corrupt model checkpoints are deleted and retried once automatically on the next run.
 - Export is rendered locally in the browser from the generated stems.
+- Separation workers stay alive per model and are reused between jobs.
+- Completion status now shows cold/warm worker timing plus backend/provider info.
 - No background queue or cancel support yet.
