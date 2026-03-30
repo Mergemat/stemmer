@@ -4,6 +4,7 @@ import {
 	access,
 	constants,
 	copyFile,
+	cp,
 	mkdir,
 	readdir,
 	readFile,
@@ -12,12 +13,14 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
+import { buildOutputUrl } from "#/lib/output-urls";
 import type {
 	ProcessProgressUpdate,
 	RepairProcessBenchmarks,
 	RepairProcessStepBenchmark,
 	StemProcessBenchmarks,
 } from "#/lib/process-types";
+import { getStemmerRuntimePaths } from "#/lib/runtime-paths";
 import {
 	prewarmPersistentWorker,
 	runModelInPersistentWorker,
@@ -30,15 +33,6 @@ import {
 	STEM_OUTPUTS,
 } from "#/lib/stemmer-models";
 
-const PROJECT_ROOT = process.cwd();
-const RUNTIME_ROOT = path.join(PROJECT_ROOT, ".stemmer-runtime");
-const JOBS_ROOT = path.join(RUNTIME_ROOT, "jobs");
-const MODELS_ROOT = path.join(RUNTIME_ROOT, "models");
-const STEM_JOB_CACHE_FILE = path.join(RUNTIME_ROOT, "stem-cache.json");
-const RUNTIME_PYTHON_BIN =
-	process.platform === "win32"
-		? path.join(PROJECT_ROOT, ".venv", "Scripts", "python.exe")
-		: path.join(PROJECT_ROOT, ".venv", "bin", "python");
 const MIN_SUPPORTED_PYTHON_MINOR = 11;
 const MAX_SUPPORTED_PYTHON_MINOR = 13;
 const FILE_EXTENSION_PATTERN = /\.[^.]+$/;
@@ -280,8 +274,9 @@ export async function runRepairJob(args: {
 }
 
 export async function readJobFile(jobId: string, fileName: string) {
-	const resolved = path.resolve(JOBS_ROOT, jobId, fileName);
-	const expectedRoot = path.resolve(JOBS_ROOT, jobId);
+	const { jobsRoot } = getStemmerRuntimePaths();
+	const resolved = path.resolve(jobsRoot, jobId, fileName);
+	const expectedRoot = path.resolve(jobsRoot, jobId);
 	const expectedPrefix = `${expectedRoot}${path.sep}`;
 
 	if (resolved !== expectedRoot && !resolved.startsWith(expectedPrefix)) {
@@ -302,16 +297,20 @@ async function createJobDir() {
 	await ensureRuntimeDirs();
 
 	const jobId = randomUUID();
-	const dir = path.join(JOBS_ROOT, jobId);
+	const { jobsRoot } = getStemmerRuntimePaths();
+	const dir = path.join(jobsRoot, jobId);
 	await mkdir(dir, { recursive: true });
 
 	return { id: jobId, dir };
 }
 
 async function ensureRuntimeDirs() {
-	await mkdir(RUNTIME_ROOT, { recursive: true });
-	await mkdir(JOBS_ROOT, { recursive: true });
-	await mkdir(MODELS_ROOT, { recursive: true });
+	const { bundledModelsRoot, jobsRoot, modelsRoot, runtimeRoot } =
+		getStemmerRuntimePaths();
+	await mkdir(runtimeRoot, { recursive: true });
+	await mkdir(jobsRoot, { recursive: true });
+	await mkdir(modelsRoot, { recursive: true });
+	await seedBundledModels(bundledModelsRoot, modelsRoot);
 }
 
 async function readCachedStemJob(
@@ -385,9 +384,10 @@ function createStemJobCacheKey(
 
 async function readStemJobCache() {
 	await ensureRuntimeDirs();
+	const { stemCacheFile } = getStemmerRuntimePaths();
 
 	try {
-		const raw = await readFile(STEM_JOB_CACHE_FILE, "utf8");
+		const raw = await readFile(stemCacheFile, "utf8");
 		return JSON.parse(raw) as Record<string, StemJobCacheEntry>;
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
@@ -400,15 +400,18 @@ async function readStemJobCache() {
 
 async function writeStemJobCache(cache: Record<string, StemJobCacheEntry>) {
 	await ensureRuntimeDirs();
-	await writeFile(STEM_JOB_CACHE_FILE, JSON.stringify(cache));
+	const { stemCacheFile } = getStemmerRuntimePaths();
+	await writeFile(stemCacheFile, JSON.stringify(cache));
 }
 
 async function hasCachedStemFiles(entry: StemJobCacheEntry) {
+	const { jobsRoot } = getStemmerRuntimePaths();
+
 	try {
 		await Promise.all(
 			entry.outputs.map((output) =>
 				access(
-					path.join(JOBS_ROOT, entry.jobId, output.fileName),
+					path.join(jobsRoot, entry.jobId, output.fileName),
 					constants.R_OK
 				)
 			)
@@ -668,12 +671,24 @@ function ensureRuntime() {
 }
 
 async function validateRuntime() {
+	const { pythonBin, workerExecutable, workerMode } = getStemmerRuntimePaths();
+	const runtimeExecutable =
+		workerMode === "binary"
+			? ensureDefined(workerExecutable, "Bundled separation worker is missing.")
+			: ensureDefined(pythonBin, "Python runtime is missing.");
+
 	try {
-		await access(RUNTIME_PYTHON_BIN, constants.X_OK);
+		await access(runtimeExecutable, constants.X_OK);
 	} catch {
 		throw new Error(
-			"Separator runtime missing. Recreate `.venv` and install `audio-separator` before running jobs."
+			workerMode === "binary"
+				? "Bundled separation worker is missing. Reinstall the app."
+				: "Separator runtime missing. Recreate `.venv` and install `audio-separator` before running jobs."
 		);
+	}
+
+	if (workerMode === "binary") {
+		return;
 	}
 
 	const version = await readPythonVersion();
@@ -690,14 +705,20 @@ async function validateRuntime() {
 
 function readPythonVersion() {
 	return new Promise<{ major: number; minor: number }>((resolve, reject) => {
+		const { projectRoot, pythonBin } = getStemmerRuntimePaths();
+		if (!pythonBin) {
+			reject(new Error("Python runtime is unavailable."));
+			return;
+		}
+
 		const child = spawn(
-			RUNTIME_PYTHON_BIN,
+			pythonBin,
 			[
 				"-c",
 				"import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')",
 			],
 			{
-				cwd: PROJECT_ROOT,
+				cwd: projectRoot,
 				env: process.env,
 			}
 		);
@@ -705,16 +726,16 @@ function readPythonVersion() {
 		let stdout = "";
 		let stderr = "";
 
-		child.stdout.on("data", (chunk) => {
+		child.stdout.on("data", (chunk: Buffer) => {
 			stdout += chunk.toString();
 		});
 
-		child.stderr.on("data", (chunk) => {
+		child.stderr.on("data", (chunk: Buffer) => {
 			stderr += chunk.toString();
 		});
 
 		child.on("error", reject);
-		child.on("close", (code) => {
+		child.on("close", (code: number | null) => {
 			if (code !== 0) {
 				reject(
 					new Error(
@@ -744,7 +765,7 @@ function formatSeparatorError(message: string) {
 		message.includes("BeartypeDecorHintNonpepException") ||
 		message.includes("Failed to instantiate Roformer model")
 	) {
-		return "Roformer runtime failed to initialize. This usually means `.venv` was created with unsupported Python. Recreate it with Python 3.11, 3.12, or 3.13.";
+		return "Roformer runtime failed to initialize. Reinstall the app or rebuild the local runtime with Python 3.11, 3.12, or 3.13.";
 	}
 
 	if (isCorruptModelError(message)) {
@@ -772,8 +793,41 @@ function sanitizeFileName(fileName: string) {
 	return fileName.replace(INVALID_FILE_NAME_PATTERN, "_");
 }
 
-function buildOutputUrl(jobId: string, fileName: string) {
-	return `/api/output/${jobId}/${encodeURIComponent(fileName)}`;
+function ensureDefined(value: string | undefined, message: string) {
+	if (!value) {
+		throw new Error(message);
+	}
+
+	return value;
+}
+
+async function seedBundledModels(
+	bundledModelsRoot: string | undefined,
+	modelsRoot: string
+) {
+	if (!bundledModelsRoot || bundledModelsRoot === modelsRoot) {
+		return;
+	}
+
+	try {
+		const bundledEntries = await readdir(bundledModelsRoot);
+		if (bundledEntries.length === 0) {
+			return;
+		}
+
+		await cp(bundledModelsRoot, modelsRoot, {
+			errorOnExist: false,
+			force: false,
+			recursive: true,
+		});
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException | undefined)?.code;
+		if (code === "ENOENT") {
+			return;
+		}
+
+		throw error;
+	}
 }
 
 function getContentType(filePath: string) {
