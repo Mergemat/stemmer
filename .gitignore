@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+dist-ssr/
+coverage/
+.output/
+.tanstack/
+.vinxi/
+.wrangler/
+.nitro/
+__unconfig*/
+
+# local runtime artifacts
+.venv/
+.stemmer-runtime/
+
+# local environment files
+.env
+.env.*
+!.env.example
+*.local
+
+# misc local files
+.DS_Store
+*.log
+todos.json
