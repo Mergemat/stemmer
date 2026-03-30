@@ -491,6 +491,35 @@ export default function StemmerWorkbench() {
 		}
 	}
 
+	function exportStem(stemId: StemOutputId) {
+		if (!track || isExporting || jobPhase !== "complete") {
+			return;
+		}
+
+		const buffer = track.stemBuffers[stemId];
+		if (!buffer) {
+			return;
+		}
+
+		setIsExporting(true);
+
+		try {
+			const wavBuffer = encodeWav(buffer);
+			const blob = new Blob([wavBuffer], { type: "audio/wav" });
+			const exportUrl = URL.createObjectURL(blob);
+			const stemLabel =
+				STEM_OUTPUTS.find((s) => s.id === stemId)?.label.toLowerCase() ??
+				stemId;
+			const link = document.createElement("a");
+			link.href = exportUrl;
+			link.download = `${track.name.replace(FILE_EXTENSION_PATTERN, "")}-${stemLabel}.wav`;
+			link.click();
+			URL.revokeObjectURL(exportUrl);
+		} finally {
+			setIsExporting(false);
+		}
+	}
+
 	if (!track) {
 		return (
 			<section
@@ -563,6 +592,7 @@ export default function StemmerWorkbench() {
 				isDecoding={isDecoding}
 				isExporting={isExporting}
 				onExport={exportMix}
+				onExportStem={exportStem}
 				onImport={handleImport}
 				playbackTimeStore={playbackTimeStoreRef.current}
 				track={track}
