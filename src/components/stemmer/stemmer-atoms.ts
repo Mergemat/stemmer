@@ -15,7 +15,7 @@ export const INITIAL_JOB: SeparationJob = {
 };
 
 export const trackAtom = atom<TrackRecord | null>(null);
-export const selectedPresetIdAtom = atom<SeparationPresetId>("quality");
+export const selectedPresetIdAtom = atom<SeparationPresetId>("fast");
 export const stemStateAtom = atom<Record<StemOutputId, StemState>>(
 	createDefaultStemState()
 );

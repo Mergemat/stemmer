@@ -58,7 +58,7 @@ export default function Transport() {
 				</div>
 			) : null}
 
-			<div className="flex items-center gap-3 px-4 py-2.5">
+			<div className="flex items-center gap-3 px-4 py-1.5">
 				{/* Play / Pause */}
 				<ShortcutTooltip content={isPlaying ? "Pause (Space)" : "Play (Space)"}>
 					<span className="shrink-0">

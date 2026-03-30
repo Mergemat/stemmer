@@ -66,8 +66,7 @@ export function resolveShortcutAction(
 			return { deltaSeconds: SEEK_STEP_SECONDS, type: "seek" };
 		case "1":
 		case "2":
-		case "3":
-		case "4": {
+		case "3": {
 			if (event.repeat) {
 				return null;
 			}
