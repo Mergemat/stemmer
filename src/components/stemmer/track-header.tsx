@@ -1,15 +1,30 @@
-import { Download, Music, RefreshCw } from "lucide-react";
+import {
+	ChevronDown,
+	Download,
+	Mic,
+	Music,
+	Music4,
+	RefreshCw,
+} from "lucide-react";
+import { DropdownMenu } from "radix-ui";
 import type { ChangeEvent } from "react";
 import { Button } from "#/components/ui/button";
 import { formatTime } from "#/lib/stemmer-audio";
+import { STEM_OUTPUTS, type StemOutputId } from "#/lib/stemmer-models";
 import { type PlaybackTimeStore, usePlaybackTime } from "./playback-time-store";
 import type { TrackRecord } from "./types";
+
+const STEM_ICONS: Record<StemOutputId, typeof Mic> = {
+	vocals: Mic,
+	instrumental: Music4,
+};
 
 interface Props {
 	canExport: boolean;
 	isDecoding: boolean;
 	isExporting: boolean;
 	onExport: () => void;
+	onExportStem: (stemId: StemOutputId) => void;
 	onImport: (e: ChangeEvent<HTMLInputElement>) => void;
 	playbackTimeStore: PlaybackTimeStore;
 	track: TrackRecord;
@@ -23,7 +38,10 @@ function TrackHeader({
 	playbackTimeStore,
 	onImport,
 	onExport,
+	onExportStem,
 }: Props) {
+	const disabled = !canExport || isExporting;
+
 	return (
 		<div className="flex shrink-0 items-center gap-3 border-border/60 border-b bg-card px-4 py-2.5 shadow-[0_1px_4px_rgba(0,0,0,0.1)]">
 			{/* Track icon */}
@@ -65,17 +83,55 @@ function TrackHeader({
 				</label>
 			</Button>
 
-			{/* Export */}
-			<Button
-				className="shrink-0"
-				disabled={!canExport || isExporting}
-				onClick={onExport}
-				size="sm"
-				variant="outline"
-			>
-				<Download className="size-3.5" />
-				{isExporting ? "Exporting..." : "Download"}
-			</Button>
+			{/* Download dropdown */}
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger asChild>
+					<Button
+						className="shrink-0"
+						disabled={disabled}
+						size="sm"
+						variant="outline"
+					>
+						<Download className="size-3.5" />
+						{isExporting ? "Exporting..." : "Download"}
+						<ChevronDown className="size-3 opacity-50" />
+					</Button>
+				</DropdownMenu.Trigger>
+
+				<DropdownMenu.Portal>
+					<DropdownMenu.Content
+						align="end"
+						className="fade-in-0 zoom-in-95 z-50 min-w-[180px] animate-in overflow-hidden rounded-lg border border-border bg-card p-1 shadow-black/20 shadow-lg"
+						sideOffset={4}
+					>
+						{/* Individual stems */}
+						{STEM_OUTPUTS.map((stem) => {
+							const Icon = STEM_ICONS[stem.id];
+							return (
+								<DropdownMenu.Item
+									className="flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-foreground text-sm outline-none transition-colors hover:bg-white/5 focus:bg-white/5"
+									key={stem.id}
+									onClick={() => onExportStem(stem.id)}
+								>
+									<Icon className="size-3.5" style={{ color: stem.accent }} />
+									{stem.label}
+								</DropdownMenu.Item>
+							);
+						})}
+
+						<DropdownMenu.Separator className="mx-1 my-1 h-px bg-border/60" />
+
+						{/* Full mix */}
+						<DropdownMenu.Item
+							className="flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-foreground text-sm outline-none transition-colors hover:bg-white/5 focus:bg-white/5"
+							onClick={onExport}
+						>
+							<Download className="size-3.5 text-muted-foreground" />
+							Full mix
+						</DropdownMenu.Item>
+					</DropdownMenu.Content>
+				</DropdownMenu.Portal>
+			</DropdownMenu.Root>
 		</div>
 	);
 }
