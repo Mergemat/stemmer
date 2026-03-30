@@ -20,6 +20,11 @@ import {
 	type StemState,
 } from "#/lib/stemmer-audio";
 import { STEM_OUTPUTS, type StemOutputId } from "#/lib/stemmer-models";
+import {
+	applySeekDelta,
+	resolveShortcutAction,
+	shouldHandleShortcutEvent,
+} from "./keyboard-shortcuts";
 import { createPlaybackTimeStore } from "./playback-time-store";
 import { createSeparationJobStore } from "./separation-job-store";
 import TrackHeader from "./track-header";
@@ -39,6 +44,7 @@ const INITIAL_JOB: SeparationJob = {
 	label: "Upload a song to get started.",
 };
 const FILE_EXTENSION_PATTERN = /\.[^.]+$/;
+const PRESET_IDS = MODEL_PRESETS.map((preset) => preset.id);
 
 export default function StemmerWorkbench() {
 	const [track, setTrack] = useState<TrackRecord | null>(null);
@@ -432,6 +438,24 @@ export default function StemmerWorkbench() {
 		}
 	}
 
+	function seekBy(deltaSeconds: number) {
+		if (!track) {
+			return;
+		}
+
+		const nextTime = applySeekDelta(
+			desiredTimeRef.current,
+			track.duration,
+			deltaSeconds
+		);
+		desiredTimeRef.current = nextTime;
+		playbackTimeStoreRef.current.set(nextTime);
+
+		if (isPlaying) {
+			startPlaybackAt(nextTime);
+		}
+	}
+
 	function patchStem(stemId: StemOutputId, patch: Partial<StemState>) {
 		setStemState((current) => ({
 			...current,
@@ -519,6 +543,62 @@ export default function StemmerWorkbench() {
 			setIsExporting(false);
 		}
 	}
+
+	const handleShortcutKeyDown = useEffectEvent((event: KeyboardEvent) => {
+		if (!shouldHandleShortcutEvent(event)) {
+			return;
+		}
+
+		const action = resolveShortcutAction(
+			event,
+			PRESET_IDS
+		);
+		if (!action) {
+			return;
+		}
+
+		switch (action.type) {
+			case "togglePlayback":
+				if (!(track?.stemBuffers.vocals && track.stemBuffers.instrumental)) {
+					return;
+				}
+
+				event.preventDefault();
+				void togglePlayback();
+				return;
+			case "runPreview":
+				if (!track || jobPhase === "running") {
+					return;
+				}
+
+				event.preventDefault();
+				void runPreview();
+				return;
+			case "seek":
+				if (!(track && jobPhase === "complete")) {
+					return;
+				}
+
+				event.preventDefault();
+				seekBy(action.deltaSeconds);
+				return;
+			case "selectPreset":
+				if (jobPhase === "running") {
+					return;
+				}
+
+				event.preventDefault();
+				setSelectedPresetId(action.presetId);
+				return;
+		}
+	});
+
+	useEffect(() => {
+		window.addEventListener("keydown", handleShortcutKeyDown);
+		return () => {
+			window.removeEventListener("keydown", handleShortcutKeyDown);
+		};
+	}, [handleShortcutKeyDown]);
 
 	if (!track) {
 		return (

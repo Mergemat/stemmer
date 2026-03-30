@@ -95,21 +95,24 @@ function parseProcessRequest(formData: FormData) {
 	const mode = formData.get("mode");
 	const presetId = formData.get("presetId");
 	const file = formData.get("file");
+	const fingerprint = formData.get("fingerprint");
 
 	if (
 		(mode !== "stem" && mode !== "repair") ||
 		typeof presetId !== "string" ||
-		!(file instanceof File)
+		!(file instanceof File) ||
+		(fingerprint !== null && typeof fingerprint !== "string")
 	) {
 		return null;
 	}
 
-	return { file, mode, presetId };
+	return { file, fingerprint: fingerprint ?? undefined, mode, presetId };
 }
 
 async function handleStemRequest(
 	request: {
 		file: File;
+		fingerprint?: string;
 		mode: "stem";
 		presetId: string;
 	},
@@ -128,6 +131,7 @@ async function handleStemRequest(
 		return createNdjsonStream(async (send) => {
 			const result = await runStemJob({
 				file: request.file,
+				fingerprint: request.fingerprint,
 				presetId: stemPresetId,
 				onProgress: (update) => sendStatus(send, update),
 			});
@@ -140,6 +144,7 @@ async function handleStemRequest(
 
 	const result = await runStemJob({
 		file: request.file,
+		fingerprint: request.fingerprint,
 		presetId: stemPresetId,
 	});
 	return Response.json({ mode: request.mode, ...result });
