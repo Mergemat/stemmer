@@ -10,9 +10,9 @@ export const Route = createFileRoute("/api/output/$jobId/$fileName")({
 
 					return new Response(file.buffer, {
 						headers: {
-							"content-type": file.contentType,
+							"cache-control": "private, max-age=31536000, immutable",
 							"content-length": String(file.size),
-							"cache-control": "no-store",
+							"content-type": file.contentType,
 						},
 					});
 				} catch (error) {

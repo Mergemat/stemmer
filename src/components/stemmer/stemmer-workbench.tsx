@@ -173,6 +173,7 @@ export default function StemmerWorkbench() {
 			formData.append("mode", "stem");
 			formData.append("presetId", selectedPresetId);
 			formData.append("file", track.sourceFile);
+			formData.append("fingerprint", track.id);
 
 			const payload = await processWithStream({
 				formData,
@@ -195,24 +196,34 @@ export default function StemmerWorkbench() {
 				label: "Loading separated stems...",
 			});
 
-			const nextStemUrls = Object.fromEntries(
-				payload.outputs.map((output) => [output.id, output.url])
-			) as Record<StemOutputId, string>;
+			setJob({
+				phase: "running",
+				progress: 94,
+				label: "Decoding separated stems...",
+			});
+
+			const stemAssets = await Promise.all(
+				payload.outputs.map(async (output) => {
+					const buffer = await decodeUrl(output.url);
+					return [
+						output.id,
+						{
+							buffer,
+							peaks: createWaveformPeaks(buffer, 220),
+							url: output.url,
+						},
+					] as const;
+				})
+			);
+
 			const nextStemBuffers = {} as Record<StemOutputId, AudioBuffer>;
+			const nextStemUrls = {} as Record<StemOutputId, string>;
 			const nextLanePeaks = {} as Record<StemOutputId, number[]>;
 
-			for (const [index, output] of payload.outputs.entries()) {
-				const decodeProgress =
-					90 + Math.round(((index + 1) / payload.outputs.length) * 8);
-				setJob({
-					phase: "running",
-					progress: decodeProgress,
-					label: `Decoding ${output.label.toLowerCase()} stem...`,
-				});
-
-				const buffer = await decodeUrl(output.url);
-				nextStemBuffers[output.id] = buffer;
-				nextLanePeaks[output.id] = createWaveformPeaks(buffer, 220);
+			for (const [stemId, asset] of stemAssets) {
+				nextStemBuffers[stemId] = asset.buffer;
+				nextStemUrls[stemId] = asset.url;
+				nextLanePeaks[stemId] = asset.peaks;
 			}
 
 			startTransition(() => {

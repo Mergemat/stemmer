@@ -7,7 +7,7 @@ import {
 	type StemState,
 } from "#/lib/stemmer-audio";
 import type { StemOutputId } from "#/lib/stemmer-models";
-import { type PlaybackTimeStore, usePlaybackTime } from "./playback-time-store";
+import type { PlaybackTimeStore } from "./playback-time-store";
 import type { TrackRecord } from "./types";
 import { STEMS } from "./types";
 import WaveformDisplay from "./waveform-display";
@@ -119,21 +119,13 @@ const WaveformLane = memo(function WaveformLane({
 	stemId,
 	timelineMarkers,
 }: WaveformLaneProps) {
-	const currentTime = usePlaybackTime(playbackTimeStore);
-	const playhead = duration > 0 ? currentTime / duration : 0;
 	const isMuted = effectiveGain === 0;
 	const gainPercent = Math.round(state.gain * 100);
 
 	return (
 		<div
-			aria-label={`${label} waveform`}
-			aria-valuemax={100}
-			aria-valuemin={0}
-			aria-valuenow={Math.round(playhead * 100)}
 			className="relative flex min-h-0 flex-1 select-none border-border/40 border-b last:border-b-0"
-			role="slider"
 			style={{ touchAction: "none" }}
-			tabIndex={0}
 		>
 			{/* Lane header / inline controls */}
 			<div
