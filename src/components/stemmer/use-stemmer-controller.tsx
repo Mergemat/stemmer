@@ -133,7 +133,8 @@ export function useStemmerController(): StemmerActions {
 		let sourceUrl: string | null = null;
 
 		try {
-			sourceUrl = URL.createObjectURL(file);
+			const nextSourceUrl = URL.createObjectURL(file);
+			sourceUrl = nextSourceUrl;
 			const sourceBuffer = await decodeFile(file);
 			const fingerprint = createFingerprint(file);
 			const cache = readCache()[fingerprint];
@@ -146,7 +147,7 @@ export function useStemmerController(): StemmerActions {
 					duration: sourceBuffer.duration,
 					peaks: createWaveformPeaks(sourceBuffer, 220),
 					sourceFile: file,
-					sourceUrl,
+					sourceUrl: nextSourceUrl,
 					stemUrls: {},
 					stemBuffers: {},
 					lanePeaks: {

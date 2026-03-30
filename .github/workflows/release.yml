@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build And Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.9
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run CI checks
+        run: bun run ci
+
+      - name: Read package version
+        id: package
+        run: |
+          VERSION="$(bun -e 'const pkg = JSON.parse(await Bun.file("package.json").text()); console.log(pkg.version);')"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify tag matches package version
+        run: |
+          test "${GITHUB_REF_NAME}" = "v${{ steps.package.outputs.version }}"
+
+      - name: Package production build
+        run: |
+          VERSION="${{ steps.package.outputs.version }}"
+          mkdir -p release-assets
+          tar -czf "release-assets/stemmer-${VERSION}-web-build.tar.gz" dist
+          sha256sum "release-assets/stemmer-${VERSION}-web-build.tar.gz" > "release-assets/stemmer-${VERSION}-web-build.tar.gz.sha256"
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-assets/*.tar.gz
+            release-assets/*.sha256
+          generate_release_notes: true

@@ -1,7 +1,12 @@
 {
   "name": "stemmer",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "bun@1.3.9",
+  "engines": {
+    "bun": ">=1.3.9"
+  },
   "imports": {
     "#/*": "./src/*"
   },
@@ -13,6 +18,9 @@
     "runtime:doctor": "bun run scripts/runtime-doctor.ts",
     "test": "vitest run",
     "check": "ultracite check",
+    "lint": "bun run check",
+    "typecheck": "bunx tsc --noEmit",
+    "ci": "bun run lint && bun run typecheck && bun run test && bun run build",
     "fix": "ultracite fix"
   },
   "dependencies": {

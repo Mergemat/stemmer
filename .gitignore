@@ -5,16 +5,21 @@ node_modules/
 dist/
 dist-ssr/
 coverage/
+.coverage
 .output/
 .tanstack/
 .vinxi/
 .wrangler/
 .nitro/
 __unconfig*/
+*.tsbuildinfo
 
 # local runtime artifacts
 .venv/
 .stemmer-runtime/
+__pycache__/
+*.py[cod]
+.pytest_cache/
 
 # local environment files
 .env
@@ -24,5 +29,11 @@ __unconfig*/
 
 # misc local files
 .DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.swp
+*.tmp
 *.log
 todos.json
