@@ -1,13 +1,13 @@
 import type { CSSProperties } from "react";
 
-type WaveBarsProps = {
-	peaks: number[];
-	progress: number;
+interface WaveBarsProps {
 	accent?: string;
-	height?: string;
 	/** Render a compact single-sided waveform (for the header overview) */
 	compact?: boolean;
-};
+	height?: string;
+	peaks: number[];
+	progress: number;
+}
 
 export default function WaveBars({
 	peaks,
@@ -38,8 +38,8 @@ export default function WaveBars({
 					peaks.length > 1 && index / (peaks.length - 1) <= progress;
 				return (
 					<span
-						key={`${index}-${peak}`}
 						className="min-w-0 flex-1 rounded-full transition-colors duration-75"
+						key={`${index}-${peak}`}
 						style={
 							{
 								height: `${Math.max(compact ? 6 : 4, peak * (compact ? 100 : 88))}%`,

@@ -77,7 +77,7 @@ export async function processWithStream(args: {
 		throw new Error(
 			response.ok
 				? "Processing finished without a result."
-				: `Processing failed with status ${response.status}.`,
+				: `Processing failed with status ${response.status}.`
 		);
 	}
 

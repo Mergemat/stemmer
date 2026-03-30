@@ -18,10 +18,9 @@ export const Route = createFileRoute("/api/output/$jobId/$fileName")({
 				} catch (error) {
 					return Response.json(
 						{
-							error:
-								error instanceof Error ? error.message : "File not found.",
+							error: error instanceof Error ? error.message : "File not found.",
 						},
-						{ status: 404 },
+						{ status: 404 }
 					);
 				}
 			},

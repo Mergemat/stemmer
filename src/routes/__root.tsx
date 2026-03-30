@@ -29,13 +29,13 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 
 function RootDocument({ children }: { children: React.ReactNode }) {
 	return (
-		<html lang="en" className="dark">
+		<html className="dark" lang="en">
 			<head>
 				<HeadContent />
 				<script
 					crossOrigin="anonymous"
 					src="//unpkg.com/react-scan/dist/auto.global.js"
-				></script>
+				/>
 			</head>
 			<body className="h-dvh overflow-hidden bg-background font-sans text-foreground antialiased">
 				<TanStackQueryProvider>

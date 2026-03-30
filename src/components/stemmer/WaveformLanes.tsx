@@ -1,16 +1,19 @@
 import { formatTime } from "#/lib/stemmer-audio";
+import { type PlaybackTimeStore, usePlaybackTime } from "./playbackTimeStore";
 import type { TrackRecord } from "./types";
 import { STEMS } from "./types";
 import WaveformDisplay from "./WaveformDisplay";
 
-type Props = {
-	track: TrackRecord | null;
-	playhead: number;
+interface Props {
 	onSeek: (progress: number) => void;
-};
+	playbackTimeStore: PlaybackTimeStore;
+	track: TrackRecord;
+}
 
 function buildTimelineMarkers(duration: number) {
-	if (duration <= 0) return [];
+	if (duration <= 0) {
+		return [];
+	}
 	const count = Math.max(2, Math.min(8, Math.floor(duration / 30) + 2));
 	return Array.from({ length: count }, (_, i) => ({
 		position: (i / (count - 1)) * 100,
@@ -18,15 +21,15 @@ function buildTimelineMarkers(duration: number) {
 	}));
 }
 
-export default function WaveformLanes({ track, playhead, onSeek }: Props) {
+function WaveformLanes({ track, playbackTimeStore, onSeek }: Props) {
 	return (
 		<div className="flex min-w-0 flex-1 flex-col">
 			{/* Timeline markers */}
-			<div className="relative flex h-6 shrink-0 items-end border-b border-border px-2">
-				{buildTimelineMarkers(track?.duration ?? 0).map((m) => (
+			<div className="relative flex h-6 shrink-0 items-end border-border border-b px-2">
+				{buildTimelineMarkers(track.duration).map((m) => (
 					<span
-						key={m.position}
 						className="absolute text-[10px] text-muted-foreground"
+						key={m.position}
 						style={{ left: `${m.position}%`, transform: "translateX(-50%)" }}
 					>
 						{m.label}
@@ -36,33 +39,66 @@ export default function WaveformLanes({ track, playhead, onSeek }: Props) {
 
 			{/* Stem lanes */}
 			{STEMS.map((stem) => (
-				<div
+				<WaveformLane
+					accent={stem.accent}
+					duration={track.duration}
 					key={stem.id}
-					className="relative min-h-0 flex-1 border-b border-border last:border-b-0 select-none"
-					role="slider"
-					aria-label={`${stem.label} waveform`}
-					aria-valuemin={0}
-					aria-valuemax={100}
-					aria-valuenow={Math.round(playhead * 100)}
-					tabIndex={0}
-					style={{ touchAction: "none" }}
-				>
-					{/* Lane label */}
-					<span className="absolute left-2 top-1 z-10 text-[10px] font-medium tracking-wider text-muted-foreground">
-						{stem.label}
-					</span>
-					<div className="h-full">
-						<WaveformDisplay
-							peaks={track?.lanePeaks[stem.id] ?? []}
-							duration={track?.duration ?? 0}
-							currentTime={playhead * (track?.duration ?? 0)}
-							onSeek={onSeek}
-							accent={stem.accent}
-							className="h-full w-full cursor-crosshair"
-						/>
-					</div>
-				</div>
+					label={stem.label}
+					onSeek={onSeek}
+					peaks={track.lanePeaks[stem.id]}
+					playbackTimeStore={playbackTimeStore}
+				/>
 			))}
 		</div>
 	);
 }
+
+interface WaveformLaneProps {
+	accent: string;
+	duration: number;
+	label: string;
+	onSeek: (progress: number) => void;
+	peaks: number[];
+	playbackTimeStore: PlaybackTimeStore;
+}
+
+function WaveformLane({
+	accent,
+	duration,
+	label,
+	onSeek,
+	peaks,
+	playbackTimeStore,
+}: WaveformLaneProps) {
+	const currentTime = usePlaybackTime(playbackTimeStore);
+	const playhead = duration > 0 ? currentTime / duration : 0;
+
+	return (
+		<div
+			aria-label={`${label} waveform`}
+			aria-valuemax={100}
+			aria-valuemin={0}
+			aria-valuenow={Math.round(playhead * 100)}
+			className="relative min-h-0 flex-1 select-none border-border border-b last:border-b-0"
+			role="slider"
+			style={{ touchAction: "none" }}
+			tabIndex={0}
+		>
+			<span className="absolute top-1 left-2 z-10 font-medium text-[10px] text-muted-foreground tracking-wider">
+				{label}
+			</span>
+			<div className="h-full">
+				<WaveformDisplay
+					accent={accent}
+					className="h-full w-full cursor-crosshair"
+					duration={duration}
+					onSeek={onSeek}
+					peaks={peaks}
+					playbackTimeStore={playbackTimeStore}
+				/>
+			</div>
+		</div>
+	);
+}
+
+export default WaveformLanes;

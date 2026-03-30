@@ -1,28 +1,35 @@
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import WaveSurfer from "wavesurfer.js";
+import { type PlaybackTimeStore, usePlaybackTime } from "./playbackTimeStore";
 
-type Props = {
-	peaks: number[];
-	duration: number;
-	currentTime: number;
-	onSeek: (progress: number) => void;
+interface Props {
 	accent?: string;
 	className?: string;
 	compact?: boolean;
-};
+	duration: number;
+	onSeek: (progress: number) => void;
+	peaks: number[];
+	playbackTimeStore: PlaybackTimeStore;
+}
 
-export default function WaveformDisplay({
+function WaveformDisplay({
 	peaks,
 	duration,
-	currentTime,
+	playbackTimeStore,
 	onSeek,
 	accent = "#f6c623",
 	className,
 	compact = false,
 }: Props) {
+	const currentTime = usePlaybackTime(playbackTimeStore);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const waveSurferRef = useRef<WaveSurfer | null>(null);
+	const currentTimeRef = useRef(currentTime);
 	const onSeekRef = useRef(onSeek);
+
+	useEffect(() => {
+		currentTimeRef.current = currentTime;
+	}, [currentTime]);
 
 	useEffect(() => {
 		onSeekRef.current = onSeek;
@@ -66,7 +73,7 @@ export default function WaveformDisplay({
 			onSeekRef.current(duration > 0 ? nextTime / duration : 0);
 		});
 
-		waveSurfer.setTime(currentTime);
+		waveSurfer.setTime(currentTimeRef.current);
 		waveSurferRef.current = waveSurfer;
 
 		return () => {
@@ -93,10 +100,7 @@ export default function WaveformDisplay({
 
 	if (!peaks.length || duration <= 0) {
 		return (
-			<div
-				ref={containerRef}
-				className={className}
-			>
+			<div className={className} ref={containerRef}>
 				<div className="flex h-full items-center">
 					<div className="h-px w-full bg-border/40" />
 				</div>
@@ -104,5 +108,7 @@ export default function WaveformDisplay({
 		);
 	}
 
-	return <div ref={containerRef} className={className} />;
+	return <div className={className} ref={containerRef} />;
 }
+
+export default memo(WaveformDisplay);
