@@ -12,24 +12,20 @@ describe("findStemOutputFile", () => {
 		];
 
 		expect(findStemOutputFile(files, "vocals")).toBe(
-			"demo_(Vocals)_Kim_Vocal_2.wav",
+			"demo_(Vocals)_Kim_Vocal_2.wav"
 		);
 	});
 
 	it("prefers no-vocals style outputs for the instrumental lane", () => {
-		const files = [
-			"song_(Vocals).wav",
-			"song_(No Vocals).wav",
-		];
+		const files = ["song_(Vocals).wav", "song_(No Vocals).wav"];
 
-		expect(findStemOutputFile(files, "instrumental")).toBe("song_(No Vocals).wav");
+		expect(findStemOutputFile(files, "instrumental")).toBe(
+			"song_(No Vocals).wav"
+		);
 	});
 
 	it("rejects no-vocals style outputs for the vocals lane", () => {
-		const files = [
-			"song_(No Vocals).wav",
-			"song_(Vocals).wav",
-		];
+		const files = ["song_(No Vocals).wav", "song_(Vocals).wav"];
 
 		expect(findStemOutputFile(files, "vocals")).toBe("song_(Vocals).wav");
 	});

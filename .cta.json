@@ -11,11 +11,5 @@
   "routerOnly": false,
   "version": 1,
   "framework": "react",
-  "chosenAddOns": [
-    "biome",
-    "shadcn",
-    "t3env",
-    "tanstack-query",
-    "compiler"
-  ]
+  "chosenAddOns": ["biome", "shadcn", "t3env", "tanstack-query", "compiler"]
 }

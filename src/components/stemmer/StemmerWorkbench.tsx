@@ -3,12 +3,12 @@ import {
 	type ChangeEvent,
 	type DragEvent,
 	startTransition,
-	useCallback,
 	useEffect,
+	useEffectEvent,
 	useRef,
 	useState,
 } from "react";
-import * as Tone from "tone";
+import { Gain, now, Player, start } from "tone";
 import { Button } from "#/components/ui/button";
 import { processWithStream } from "#/lib/process-client";
 import {
@@ -21,6 +21,8 @@ import {
 	type StemState,
 } from "#/lib/stemmer-audio";
 import { STEM_OUTPUTS, type StemOutputId } from "#/lib/stemmer-models";
+import { createPlaybackTimeStore } from "./playbackTimeStore";
+import { createSeparationJobStore } from "./separationJobStore";
 import StemSidebar from "./StemSidebar";
 import TrackHeader from "./TrackHeader";
 import Transport from "./Transport";
@@ -33,120 +35,69 @@ import {
 } from "./types";
 import WaveformLanes from "./WaveformLanes";
 
+const INITIAL_JOB: SeparationJob = {
+	phase: "idle",
+	progress: 0,
+	label: "Upload a song to get started.",
+};
+const FILE_EXTENSION_PATTERN = /\.[^.]+$/;
+
 export default function StemmerWorkbench() {
 	const [track, setTrack] = useState<TrackRecord | null>(null);
 	const [selectedPresetId, setSelectedPresetId] =
 		useState<(typeof MODEL_PRESETS)[number]["id"]>("quality");
 	const [stemState, setStemState] = useState(createDefaultStemState);
-	const [job, setJob] = useState<SeparationJob>({
-		phase: "idle",
-		progress: 0,
-		label: "Upload a song to get started.",
-	});
-	const [currentTime, setCurrentTime] = useState(0);
+	const [jobPhase, setJobPhase] = useState<SeparationJob["phase"]>(
+		INITIAL_JOB.phase
+	);
 	const [isPlaying, setIsPlaying] = useState(false);
 	const [isExporting, setIsExporting] = useState(false);
 	const [isDecoding, setIsDecoding] = useState(false);
 	const [isDragging, setIsDragging] = useState(false);
 
-	const stemPlayersRef = useRef<Partial<Record<StemOutputId, Tone.Player>>>({});
-	const stemGainRef = useRef<Partial<Record<StemOutputId, Tone.Gain>>>({});
+	const jobStoreRef = useRef(createSeparationJobStore(INITIAL_JOB));
+	const playbackTimeStoreRef = useRef(createPlaybackTimeStore());
+	const stemPlayersRef = useRef<Partial<Record<StemOutputId, Player>>>({});
+	const stemGainRef = useRef<Partial<Record<StemOutputId, Gain>>>({});
 	const activeTrackRef = useRef<TrackRecord | null>(null);
+	const selectedPresetIdRef = useRef(selectedPresetId);
 	const desiredTimeRef = useRef(0);
-	const playbackAnchorRef = useRef<{ startedAt: number; offset: number } | null>(
-		null,
-	);
+	const playbackAnchorRef = useRef<{
+		startedAt: number;
+		offset: number;
+	} | null>(null);
 
-	useEffect(() => {
-		activeTrackRef.current = track;
-	}, [track]);
+	const setJob = useEffectEvent((nextJob: SeparationJob) => {
+		jobStoreRef.current.set(nextJob);
+		setJobPhase((currentPhase) =>
+			currentPhase === nextJob.phase ? currentPhase : nextJob.phase
+		);
+	});
 
-	useEffect(() => {
-		if (!isPlaying) {
-			return;
-		}
+	const stopPlayback = useEffectEvent((nextTime?: number) => {
+		const anchor = playbackAnchorRef.current;
+		const activeTrack = activeTrackRef.current;
+		const resolvedTime =
+			nextTime ??
+			(anchor && activeTrack
+				? Math.min(
+						activeTrack.duration,
+						anchor.offset + Math.max(0, now() - anchor.startedAt)
+					)
+				: desiredTimeRef.current);
 
-		const interval = window.setInterval(() => {
-			const anchor = playbackAnchorRef.current;
-			const activeTrack = activeTrackRef.current;
-			if (!anchor || !activeTrack) {
-				return;
-			}
+		stopPlayers(stemPlayersRef.current);
+		playbackAnchorRef.current = null;
+		desiredTimeRef.current = resolvedTime;
+		playbackTimeStoreRef.current.set(resolvedTime);
+		setIsPlaying(false);
+	});
 
-			const nextTime = Math.min(
-				activeTrack.duration,
-				anchor.offset + Math.max(0, Tone.now() - anchor.startedAt),
-			);
-			desiredTimeRef.current = nextTime;
-			setCurrentTime(nextTime);
-
-			if (nextTime >= activeTrack.duration) {
-				stopPlayback(activeTrack.duration);
-			}
-		}, 120);
-
-		return () => {
-			window.clearInterval(interval);
-		};
-	}, [isPlaying]);
-
-	useEffect(() => {
-		for (const stem of STEM_OUTPUTS) {
-			const gainNode = stemGainRef.current[stem.id];
-			if (gainNode) {
-				gainNode.gain.value = getEffectiveStemGain(stem.id, stemState);
-			}
-		}
-
-		persistCache(track, stemState, selectedPresetId);
-	}, [selectedPresetId, stemState, track]);
-
-	useEffect(() => {
-		return () => {
-			if (activeTrackRef.current) {
-				URL.revokeObjectURL(activeTrackRef.current.sourceUrl);
-			}
-			disposeStemGraph(stemPlayersRef.current, stemGainRef.current);
-		};
-	}, []);
-
-	async function handleImport(event: ChangeEvent<HTMLInputElement>) {
-		const file = event.target.files?.[0];
-		if (!file) {
-			return;
-		}
-		await importFile(file);
-		event.target.value = "";
-	}
-
-	const handleDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
-		event.preventDefault();
-		setIsDragging(false);
-		const file = event.dataTransfer.files[0];
-		if (file?.type.startsWith("audio/")) {
-			importFile(file);
-		}
-	}, []);
-
-	const handleDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
-		event.preventDefault();
-		setIsDragging(true);
-	}, []);
-
-	const handleDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {
-		if (event.currentTarget.contains(event.relatedTarget as Node)) return;
-		setIsDragging(false);
-	}, []);
-
-	useEffect(() => {
-		stopPlayback(0);
-		disposeStemGraph(stemPlayersRef.current, stemGainRef.current);
-	}, [track?.id, track?.stemBuffers.instrumental, track?.stemBuffers.vocals]);
-
-	async function importFile(file: File) {
+	const importFile = useEffectEvent(async (file: File) => {
 		stopPlayback(0);
 		disposeStemGraph(stemPlayersRef.current, stemGainRef.current);
 		desiredTimeRef.current = 0;
+		playbackTimeStoreRef.current.set(0);
 
 		if (activeTrackRef.current) {
 			URL.revokeObjectURL(activeTrackRef.current.sourceUrl);
@@ -176,11 +127,10 @@ export default function StemmerWorkbench() {
 						instrumental: [],
 					},
 				});
-				setSelectedPresetId(cache?.presetId ?? selectedPresetId);
+				setSelectedPresetId(cache?.presetId ?? selectedPresetIdRef.current);
 				setStemState(normalizeStemState(cache?.stems ?? {}));
 			});
 
-			setCurrentTime(0);
 			setJob({
 				phase: "idle",
 				progress: 0,
@@ -196,17 +146,17 @@ export default function StemmerWorkbench() {
 		} finally {
 			setIsDecoding(false);
 		}
-	}
+	});
 
-	async function runPreview() {
-		if (!track || job.phase === "running") {
+	const runPreview = useEffectEvent(async () => {
+		if (!track || jobPhase === "running") {
 			return;
 		}
 
 		stopPlayback(0);
 		disposeStemGraph(stemPlayersRef.current, stemGainRef.current);
 		desiredTimeRef.current = 0;
-		setCurrentTime(0);
+		playbackTimeStoreRef.current.set(0);
 		setJob({
 			phase: "running",
 			progress: 1,
@@ -241,7 +191,7 @@ export default function StemmerWorkbench() {
 			});
 
 			const nextStemUrls = Object.fromEntries(
-				payload.outputs.map((output) => [output.id, output.url]),
+				payload.outputs.map((output) => [output.id, output.url])
 			) as Record<StemOutputId, string>;
 			const nextStemBuffers = {} as Record<StemOutputId, AudioBuffer>;
 			const nextLanePeaks = {} as Record<StemOutputId, number[]>;
@@ -269,7 +219,7 @@ export default function StemmerWorkbench() {
 								stemBuffers: nextStemBuffers,
 								lanePeaks: nextLanePeaks,
 							}
-						: current,
+						: current
 				);
 			});
 
@@ -288,14 +238,139 @@ export default function StemmerWorkbench() {
 						: "Separation failed. Try again.",
 			});
 		}
+	});
+
+	const startPlaybackAt = useEffectEvent(async (time: number) => {
+		if (!(track?.stemBuffers.vocals && track.stemBuffers.instrumental)) {
+			return;
+		}
+
+		await start();
+		const players = ensureStemGraph(
+			track,
+			stemState,
+			stemPlayersRef.current,
+			stemGainRef.current
+		);
+		const startOffset =
+			time >= track.duration ? 0 : clampPlaybackTime(track.duration, time);
+		const startAt = now() + 0.03;
+
+		stopPlayers(players);
+
+		for (const stem of STEM_OUTPUTS) {
+			const player = players[stem.id];
+			if (!player) {
+				continue;
+			}
+
+			const remaining = Math.max(player.buffer.duration - startOffset, 0.01);
+			player.start(startAt, startOffset, remaining);
+		}
+
+		playbackAnchorRef.current = {
+			startedAt: startAt,
+			offset: startOffset,
+		};
+		desiredTimeRef.current = startOffset;
+		playbackTimeStoreRef.current.set(startOffset);
+		setIsPlaying(true);
+	});
+
+	useEffect(() => {
+		activeTrackRef.current = track;
+	}, [track]);
+
+	useEffect(() => {
+		selectedPresetIdRef.current = selectedPresetId;
+	}, [selectedPresetId]);
+
+	useEffect(() => {
+		if (!isPlaying) {
+			return;
+		}
+
+		const interval = window.setInterval(() => {
+			const anchor = playbackAnchorRef.current;
+			const activeTrack = activeTrackRef.current;
+			if (!(anchor && activeTrack)) {
+				return;
+			}
+
+			const nextTime = Math.min(
+				activeTrack.duration,
+				anchor.offset + Math.max(0, now() - anchor.startedAt)
+			);
+			desiredTimeRef.current = nextTime;
+			playbackTimeStoreRef.current.set(nextTime);
+
+			if (nextTime >= activeTrack.duration) {
+				stopPlayback(activeTrack.duration);
+			}
+		}, 120);
+
+		return () => {
+			window.clearInterval(interval);
+		};
+	}, [isPlaying]);
+
+	useEffect(() => {
+		for (const stem of STEM_OUTPUTS) {
+			const gainNode = stemGainRef.current[stem.id];
+			if (gainNode) {
+				gainNode.gain.value = getEffectiveStemGain(stem.id, stemState);
+			}
+		}
+
+		persistCache(track, stemState, selectedPresetId);
+	}, [selectedPresetId, stemState, track]);
+
+	useEffect(() => {
+		return () => {
+			if (activeTrackRef.current) {
+				URL.revokeObjectURL(activeTrackRef.current.sourceUrl);
+			}
+			disposeStemGraph(stemPlayersRef.current, stemGainRef.current);
+		};
+	}, []);
+
+	useEffect(() => {
+		stopPlayback(0);
+		disposeStemGraph(stemPlayersRef.current, stemGainRef.current);
+	}, [track]);
+
+	async function handleImport(event: ChangeEvent<HTMLInputElement>) {
+		const file = event.target.files?.[0];
+		if (!file) {
+			return;
+		}
+		await importFile(file);
+		event.target.value = "";
+	}
+
+	function handleDrop(event: DragEvent<HTMLDivElement>) {
+		event.preventDefault();
+		setIsDragging(false);
+		const file = event.dataTransfer.files[0];
+		if (file?.type.startsWith("audio/")) {
+			importFile(file);
+		}
+	}
+
+	function handleDragOver(event: DragEvent<HTMLDivElement>) {
+		event.preventDefault();
+		setIsDragging(true);
+	}
+
+	function handleDragLeave(event: DragEvent<HTMLDivElement>) {
+		if (event.currentTarget.contains(event.relatedTarget as Node)) {
+			return;
+		}
+		setIsDragging(false);
 	}
 
 	async function togglePlayback() {
-		if (
-			!track ||
-			!track.stemBuffers.vocals ||
-			!track.stemBuffers.instrumental
-		) {
+		if (!(track?.stemBuffers.vocals && track.stemBuffers.instrumental)) {
 			return;
 		}
 
@@ -315,71 +390,11 @@ export default function StemmerWorkbench() {
 		const clamped = Math.min(1, Math.max(0, progress));
 		const nextTime = track.duration * clamped;
 		desiredTimeRef.current = nextTime;
-		setCurrentTime(nextTime);
+		playbackTimeStoreRef.current.set(nextTime);
 
 		if (isPlaying) {
-			void startPlaybackAt(nextTime);
+			startPlaybackAt(nextTime);
 		}
-	}
-
-	async function startPlaybackAt(time: number) {
-		if (
-			!track ||
-			!track.stemBuffers.vocals ||
-			!track.stemBuffers.instrumental
-		) {
-			return;
-		}
-
-		await Tone.start();
-		const players = ensureStemGraph(
-			track,
-			stemState,
-			stemPlayersRef.current,
-			stemGainRef.current,
-		);
-		const startOffset =
-			time >= track.duration ? 0 : clampPlaybackTime(track.duration, time);
-		const startAt = Tone.now() + 0.03;
-
-		stopPlayers(players);
-
-		for (const stem of STEM_OUTPUTS) {
-			const player = players[stem.id];
-			if (!player) {
-				continue;
-			}
-
-			const remaining = Math.max(player.buffer.duration - startOffset, 0.01);
-			player.start(startAt, startOffset, remaining);
-		}
-
-		playbackAnchorRef.current = {
-			startedAt: startAt,
-			offset: startOffset,
-		};
-		desiredTimeRef.current = startOffset;
-		setCurrentTime(startOffset);
-		setIsPlaying(true);
-	}
-
-	function stopPlayback(nextTime?: number) {
-		const anchor = playbackAnchorRef.current;
-		const activeTrack = activeTrackRef.current;
-		const resolvedTime =
-			nextTime ??
-			(anchor && activeTrack
-				? Math.min(
-						activeTrack.duration,
-						anchor.offset + Math.max(0, Tone.now() - anchor.startedAt),
-					)
-				: desiredTimeRef.current);
-
-		stopPlayers(stemPlayersRef.current);
-		playbackAnchorRef.current = null;
-		desiredTimeRef.current = resolvedTime;
-		setCurrentTime(resolvedTime);
-		setIsPlaying(false);
 	}
 
 	function patchStem(stemId: StemOutputId, patch: Partial<StemState>) {
@@ -390,12 +405,12 @@ export default function StemmerWorkbench() {
 	}
 
 	async function exportMix() {
-		if (!track || isExporting || job.phase !== "complete") {
+		if (!track || isExporting || jobPhase !== "complete") {
 			return;
 		}
 
 		const buffers = STEM_OUTPUTS.map(
-			(stem) => track.stemBuffers[stem.id],
+			(stem) => track.stemBuffers[stem.id]
 		).filter(Boolean) as AudioBuffer[];
 
 		if (!buffers.length) {
@@ -433,7 +448,7 @@ export default function StemmerWorkbench() {
 			const exportUrl = URL.createObjectURL(blob);
 			const link = document.createElement("a");
 			link.href = exportUrl;
-			link.download = `${track.name.replace(/\.[^.]+$/, "")}-stemmer.wav`;
+			link.download = `${track.name.replace(FILE_EXTENSION_PATTERN, "")}-stemmer.wav`;
 			link.click();
 			URL.revokeObjectURL(exportUrl);
 		} finally {
@@ -441,20 +456,14 @@ export default function StemmerWorkbench() {
 		}
 	}
 
-	const playhead =
-		track && track.duration > 0 ? currentTime / track.duration : 0;
-	const selectedPreset =
-		MODEL_PRESETS.find((preset) => preset.id === selectedPresetId) ??
-		MODEL_PRESETS[0];
-
-	// ── Empty state: upload hero ──
 	if (!track) {
 		return (
-			<div
+			<section
+				aria-label="Audio upload dropzone"
 				className="flex h-dvh flex-col items-center justify-center bg-background px-4"
-				onDrop={handleDrop}
-				onDragOver={handleDragOver}
 				onDragLeave={handleDragLeave}
+				onDragOver={handleDragOver}
+				onDrop={handleDrop}
 			>
 				<div
 					className={`flex w-full max-w-lg flex-col items-center rounded-2xl border-2 border-dashed px-8 py-16 text-center transition-colors ${
@@ -464,7 +473,7 @@ export default function StemmerWorkbench() {
 					{isDecoding ? (
 						<>
 							<div className="mb-4 size-10 animate-spin rounded-full border-2 border-muted border-t-primary" />
-							<p className="text-lg font-semibold text-foreground">
+							<p className="font-semibold text-foreground text-lg">
 								Reading your file...
 							</p>
 						</>
@@ -473,47 +482,47 @@ export default function StemmerWorkbench() {
 							<div className="mb-5 flex size-14 items-center justify-center rounded-full bg-primary/10">
 								<Upload className="size-6 text-primary" />
 							</div>
-							<p className="mb-2 text-xl font-semibold text-foreground">
+							<p className="mb-2 font-semibold text-foreground text-xl">
 								Drop a song here
 							</p>
-							<p className="mb-6 text-sm text-muted-foreground">
+							<p className="mb-6 text-muted-foreground text-sm">
 								or click below to browse your files
 							</p>
-							<Button size="lg" asChild>
+							<Button asChild size="lg">
 								<label className="cursor-pointer">
 									<Upload className="size-4" />
 									Choose a file
 									<input
-										type="file"
 										accept="audio/*"
 										className="hidden"
 										onChange={handleImport}
+										type="file"
 									/>
 								</label>
 							</Button>
-							<p className="mt-4 text-xs text-muted-foreground">
+							<p className="mt-4 text-muted-foreground text-xs">
 								MP3, WAV, FLAC, OGG, or any audio format
 							</p>
 						</>
 					)}
 				</div>
-			</div>
+			</section>
 		);
 	}
 
-	// ── Track loaded: workbench ──
 	return (
-		<div
+		<section
+			aria-label="Stemmer workbench"
 			className="flex h-dvh flex-col bg-background"
-			onDrop={handleDrop}
-			onDragOver={handleDragOver}
 			onDragLeave={handleDragLeave}
+			onDragOver={handleDragOver}
+			onDrop={handleDrop}
 		>
 			{isDragging && (
 				<div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-					<div className="rounded-2xl border-2 border-dashed border-primary bg-card px-12 py-10 text-center">
+					<div className="rounded-2xl border-2 border-primary border-dashed bg-card px-12 py-10 text-center">
 						<Upload className="mx-auto mb-3 size-8 text-primary" />
-						<p className="text-lg font-semibold text-foreground">
+						<p className="font-semibold text-foreground text-lg">
 							Drop to replace
 						</p>
 					</div>
@@ -521,41 +530,48 @@ export default function StemmerWorkbench() {
 			)}
 
 			<TrackHeader
-				track={track}
-				playhead={playhead}
-				job={job}
+				canExport={jobPhase === "complete"}
 				isDecoding={isDecoding}
 				isExporting={isExporting}
-				onImport={handleImport}
 				onExport={exportMix}
+				onImport={handleImport}
 				onSeek={seekTo}
+				playbackTimeStore={playbackTimeStoreRef.current}
+				track={track}
 			/>
 
 			<div className="flex min-h-0 flex-1">
-				<StemSidebar stemState={stemState} job={job} onPatchStem={patchStem} />
-				<WaveformLanes track={track} playhead={playhead} onSeek={seekTo} />
+				<StemSidebar
+					disabled={jobPhase !== "complete"}
+					onPatchStem={patchStem}
+					stemState={stemState}
+				/>
+				<WaveformLanes
+					onSeek={seekTo}
+					playbackTimeStore={playbackTimeStoreRef.current}
+					track={track}
+				/>
 			</div>
 
 			<Transport
+				hasTrack={true}
 				isPlaying={isPlaying}
-				hasTrack={!!track}
-				job={job}
-				selectedPreset={selectedPreset}
-				presets={MODEL_PRESETS}
-				selectedPresetId={selectedPresetId}
+				jobStore={jobStoreRef.current}
+				onRunPreview={runPreview}
 				onSelectPreset={setSelectedPresetId}
 				onTogglePlayback={togglePlayback}
-				onRunPreview={runPreview}
+				presets={MODEL_PRESETS}
+				selectedPresetId={selectedPresetId}
 			/>
-		</div>
+		</section>
 	);
 }
 
 function ensureStemGraph(
 	track: TrackRecord,
 	stemState: Record<StemOutputId, StemState>,
-	playersRef: Partial<Record<StemOutputId, Tone.Player>> = {},
-	gainRef: Partial<Record<StemOutputId, Tone.Gain>> = {},
+	playersRef: Partial<Record<StemOutputId, Player>> = {},
+	gainRef: Partial<Record<StemOutputId, Gain>> = {}
 ) {
 	for (const stem of STEM_OUTPUTS) {
 		const buffer = track.stemBuffers[stem.id];
@@ -565,7 +581,7 @@ function ensureStemGraph(
 
 		let gain = gainRef[stem.id];
 		if (!gain) {
-			gain = new Tone.Gain(getEffectiveStemGain(stem.id, stemState));
+			gain = new Gain(getEffectiveStemGain(stem.id, stemState));
 			gain.toDestination();
 			gainRef[stem.id] = gain;
 		}
@@ -577,7 +593,7 @@ function ensureStemGraph(
 		}
 
 		currentPlayer?.dispose();
-		const nextPlayer = new Tone.Player({
+		const nextPlayer = new Player({
 			url: buffer,
 			fadeIn: 0,
 			fadeOut: 0,
@@ -591,8 +607,8 @@ function ensureStemGraph(
 }
 
 function disposeStemGraph(
-	players: Partial<Record<StemOutputId, Tone.Player>>,
-	gains: Partial<Record<StemOutputId, Tone.Gain>>,
+	players: Partial<Record<StemOutputId, Player>>,
+	gains: Partial<Record<StemOutputId, Gain>>
 ) {
 	stopPlayers(players);
 
@@ -604,7 +620,7 @@ function disposeStemGraph(
 	}
 }
 
-function stopPlayers(players: Partial<Record<StemOutputId, Tone.Player>>) {
+function stopPlayers(players: Partial<Record<StemOutputId, Player>>) {
 	for (const stem of STEM_OUTPUTS) {
 		const player = players[stem.id];
 		if (!player) {
@@ -666,7 +682,7 @@ function readCache(): Record<string, CachedTrackRecord> {
 function persistCache(
 	track: TrackRecord | null,
 	stemState: Record<StemOutputId, StemState>,
-	presetId: (typeof MODEL_PRESETS)[number]["id"],
+	presetId: (typeof MODEL_PRESETS)[number]["id"]
 ) {
 	if (!track) {
 		return;

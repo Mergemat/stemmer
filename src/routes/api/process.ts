@@ -3,11 +3,8 @@ import type {
 	ProcessProgressUpdate,
 	ProcessStreamEvent,
 } from "#/lib/process-types";
-import {
-	getRepairPreset,
-	getSeparationPreset,
-} from "#/lib/stemmer-models";
 import { runRepairJob, runStemJob } from "#/lib/separator-server";
+import { getRepairPreset, getSeparationPreset } from "#/lib/stemmer-models";
 
 export const Route = createFileRoute("/api/process")({
 	server: {
@@ -21,8 +18,9 @@ export const Route = createFileRoute("/api/process")({
 					request.headers.get("x-process-stream") === "1" ||
 					request.headers.get("accept")?.includes("application/x-ndjson");
 
-				const sendStream = (run: (send: (event: ProcessStreamEvent) => void) => Promise<void>) =>
-					createNdjsonStream(run);
+				const sendStream = (
+					run: (send: (event: ProcessStreamEvent) => void) => Promise<void>
+				) => createNdjsonStream(run);
 
 				if (
 					(mode !== "stem" && mode !== "repair") ||
@@ -37,7 +35,7 @@ export const Route = createFileRoute("/api/process")({
 
 					return Response.json(
 						{ error: "Invalid process request." },
-						{ status: 400 },
+						{ status: 400 }
 					);
 				}
 
@@ -56,7 +54,7 @@ export const Route = createFileRoute("/api/process")({
 
 							return Response.json(
 								{ error: "Unknown separation preset." },
-								{ status: 400 },
+								{ status: 400 }
 							);
 						}
 
@@ -91,7 +89,7 @@ export const Route = createFileRoute("/api/process")({
 
 						return Response.json(
 							{ error: "Unknown repair preset." },
-							{ status: 400 },
+							{ status: 400 }
 						);
 					}
 
@@ -121,9 +119,7 @@ export const Route = createFileRoute("/api/process")({
 							send({
 								type: "error",
 								error:
-									error instanceof Error
-										? error.message
-										: "Processing failed.",
+									error instanceof Error ? error.message : "Processing failed.",
 							});
 						});
 					}
@@ -133,7 +129,7 @@ export const Route = createFileRoute("/api/process")({
 							error:
 								error instanceof Error ? error.message : "Processing failed.",
 						},
-						{ status: 500 },
+						{ status: 500 }
 					);
 				}
 			},
@@ -142,7 +138,7 @@ export const Route = createFileRoute("/api/process")({
 });
 
 function createNdjsonStream(
-	run: (send: (event: ProcessStreamEvent) => void) => Promise<void>,
+	run: (send: (event: ProcessStreamEvent) => void) => Promise<void>
 ) {
 	const encoder = new TextEncoder();
 
@@ -172,13 +168,13 @@ function createNdjsonStream(
 				"content-type": "application/x-ndjson; charset=utf-8",
 				"x-accel-buffering": "no",
 			},
-		},
+		}
 	);
 }
 
 function sendStatus(
 	send: (event: ProcessStreamEvent) => void,
-	update: ProcessProgressUpdate,
+	update: ProcessProgressUpdate
 ) {
 	send({
 		type: "status",

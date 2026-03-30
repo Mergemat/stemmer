@@ -5,7 +5,7 @@ type SeekHandler = (progress: number) => void;
 
 export function usePointerSeek<T extends HTMLElement>(
 	containerRef: React.RefObject<T | null>,
-	onSeek: SeekHandler,
+	onSeek: SeekHandler
 ) {
 	const activePointerIdRef = useRef<number | null>(null);
 	const [isScrubbing, setIsScrubbing] = useState(false);
@@ -13,10 +13,12 @@ export function usePointerSeek<T extends HTMLElement>(
 	const calcProgress = useCallback(
 		(clientX: number) => {
 			const container = containerRef.current;
-			if (!container) return null;
+			if (!container) {
+				return null;
+			}
 			return getSeekProgress(clientX, container.getBoundingClientRect());
 		},
-		[containerRef],
+		[containerRef]
 	);
 
 	const stopScrubbing = useCallback(() => {
@@ -26,16 +28,20 @@ export function usePointerSeek<T extends HTMLElement>(
 
 	const handlePointerDown = useCallback(
 		(event: React.PointerEvent<HTMLElement>) => {
-			if (!event.isPrimary || event.button !== 0) return;
+			if (!event.isPrimary || event.button !== 0) {
+				return;
+			}
 			event.preventDefault();
 			activePointerIdRef.current = event.pointerId;
 			event.currentTarget.setPointerCapture?.(event.pointerId);
 			const progress = calcProgress(event.clientX);
-			if (progress === null) return;
+			if (progress === null) {
+				return;
+			}
 			onSeek(progress);
 			setIsScrubbing(true);
 		},
-		[calcProgress, onSeek],
+		[calcProgress, onSeek]
 	);
 
 	const handlePointerMove = useCallback(
@@ -53,18 +59,20 @@ export function usePointerSeek<T extends HTMLElement>(
 				onSeek(progress);
 			}
 		},
-		[calcProgress, isScrubbing, onSeek],
+		[calcProgress, isScrubbing, onSeek]
 	);
 
 	const handlePointerUp = useCallback(
 		(event: React.PointerEvent<HTMLElement>) => {
-			if (activePointerIdRef.current !== event.pointerId) return;
+			if (activePointerIdRef.current !== event.pointerId) {
+				return;
+			}
 			if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
 				event.currentTarget.releasePointerCapture?.(event.pointerId);
 			}
 			stopScrubbing();
 		},
-		[stopScrubbing],
+		[stopScrubbing]
 	);
 
 	return {

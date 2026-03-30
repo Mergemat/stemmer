@@ -1,15 +1,15 @@
 import { STEM_OUTPUTS, type StemOutputId } from "#/lib/stemmer-models";
 
-export type StemState = {
+export interface StemState {
 	gain: number;
 	muted: boolean;
 	solo: boolean;
-};
+}
 
 function readSample(
 	buffer: AudioBuffer,
 	channelIndex: number,
-	sampleIndex: number,
+	sampleIndex: number
 ) {
 	const channel = buffer.getChannelData(channelIndex);
 	return channel[Math.min(channel.length - 1, sampleIndex)] ?? 0;
@@ -27,7 +27,7 @@ export function createDefaultStemState(): Record<StemOutputId, StemState> {
 }
 
 export function normalizeStemState(
-	maybeState: Partial<Record<StemOutputId, Partial<StemState>>>,
+	maybeState: Partial<Record<StemOutputId, Partial<StemState>>>
 ) {
 	const next = createDefaultStemState();
 
@@ -58,7 +58,7 @@ export function normalizeStemState(
 
 export function getEffectiveStemGain(
 	stemId: StemOutputId,
-	stemState: Record<StemOutputId, StemState>,
+	stemState: Record<StemOutputId, StemState>
 ) {
 	const soloActive = Object.values(stemState).some((state) => state.solo);
 	const state = stemState[stemId];
@@ -144,12 +144,12 @@ export function encodeWav(buffer: AudioBuffer) {
 		for (let channelIndex = 0; channelIndex < channelCount; channelIndex += 1) {
 			const sample = Math.max(
 				-1,
-				Math.min(1, buffer.getChannelData(channelIndex)[sampleIndex] ?? 0),
+				Math.min(1, buffer.getChannelData(channelIndex)[sampleIndex] ?? 0)
 			);
 			view.setInt16(
 				offset,
-				sample < 0 ? sample * 0x8000 : sample * 0x7fff,
-				true,
+				sample < 0 ? sample * 0x80_00 : sample * 0x7f_ff,
+				true
 			);
 			offset += bytesPerSample;
 		}

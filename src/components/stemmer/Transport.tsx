@@ -1,19 +1,21 @@
 import { Pause, Play, Zap } from "lucide-react";
 import { Button } from "#/components/ui/button";
 import type { SeparationPresetId } from "#/lib/stemmer-models";
-import type { SeparationJob } from "./types";
+import {
+	type SeparationJobStore,
+	useSeparationJob,
+} from "./separationJobStore";
 
-type Props = {
-	isPlaying: boolean;
+interface Props {
 	hasTrack: boolean;
-	job: SeparationJob;
-	selectedPreset: { id: string; label: string; description: string };
-	presets: Array<{ id: string; label: string; description: string }>;
-	selectedPresetId: SeparationPresetId;
+	isPlaying: boolean;
+	jobStore: SeparationJobStore;
+	onRunPreview: () => void;
 	onSelectPreset: (id: SeparationPresetId) => void;
 	onTogglePlayback: () => void;
-	onRunPreview: () => void;
-};
+	presets: Array<{ id: string; label: string; description: string }>;
+	selectedPresetId: SeparationPresetId;
+}
 
 const STATUS_LABELS: Record<string, string> = {
 	"Uploading source file...": "Uploading your song...",
@@ -26,21 +28,22 @@ function friendlyLabel(raw: string): string {
 	return STATUS_LABELS[raw] ?? raw;
 }
 
-export default function Transport({
+function Transport({
 	isPlaying,
 	hasTrack,
-	job,
+	jobStore,
 	presets,
 	selectedPresetId,
 	onSelectPreset,
 	onTogglePlayback,
 	onRunPreview,
 }: Props) {
+	const job = useSeparationJob(jobStore);
 	const isRunning = job.phase === "running";
 	const isDone = job.phase === "complete";
 
 	return (
-		<div className="relative shrink-0 border-t border-border bg-card">
+		<div className="relative shrink-0 border-border border-t bg-card">
 			{/* Progress bar — runs along the top edge of Transport */}
 			{isRunning && (
 				<div className="absolute inset-x-0 top-0 h-1 overflow-hidden bg-primary/10">
@@ -54,11 +57,11 @@ export default function Transport({
 			<div className="flex items-center gap-3 px-4 py-2">
 				{/* Play/Pause */}
 				<Button
-					variant="ghost"
-					size="icon-sm"
-					disabled={!hasTrack || !isDone}
+					disabled={!(hasTrack && isDone)}
 					onClick={onTogglePlayback}
+					size="icon-sm"
 					title={isPlaying ? "Pause" : "Play"}
+					variant="ghost"
 				>
 					{isPlaying ? (
 						<Pause className="size-4" />
@@ -71,16 +74,16 @@ export default function Transport({
 				<div className="flex items-center gap-1">
 					{presets.map((preset) => (
 						<button
-							key={preset.id}
-							type="button"
-							title={preset.description}
-							disabled={isRunning}
-							className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+							className={`rounded-full border px-2.5 py-1 font-medium text-[11px] transition ${
 								preset.id === selectedPresetId
 									? "border-primary/40 bg-primary/10 text-foreground"
 									: "border-transparent text-muted-foreground hover:text-foreground"
 							} ${isRunning ? "pointer-events-none opacity-50" : ""}`}
+							disabled={isRunning}
+							key={preset.id}
 							onClick={() => onSelectPreset(preset.id as SeparationPresetId)}
+							title={preset.description}
+							type="button"
 						>
 							{preset.label}
 						</button>
@@ -89,10 +92,10 @@ export default function Transport({
 
 				{/* Separate button */}
 				<Button
-					size="sm"
+					className="ml-1"
 					disabled={!hasTrack || isRunning}
 					onClick={onRunPreview}
-					className="ml-1"
+					size="sm"
 				>
 					{isRunning ? (
 						<>
@@ -108,10 +111,12 @@ export default function Transport({
 				</Button>
 
 				{/* Status */}
-				<span className="ml-auto text-xs text-muted-foreground">
+				<span className="ml-auto text-muted-foreground text-xs">
 					{friendlyLabel(job.label)}
 				</span>
 			</div>
 		</div>
 	);
 }
+
+export default Transport;

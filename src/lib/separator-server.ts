@@ -1,55 +1,58 @@
-import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
-	copyFile,
 	access,
 	constants,
+	copyFile,
 	mkdir,
-	readFile,
 	readdir,
+	readFile,
 	stat,
 	unlink,
 	writeFile,
 } from "node:fs/promises";
 import path from "node:path";
+import type { ProcessProgressUpdate } from "#/lib/process-types";
 import {
+	getRepairPreset,
+	getSeparationPreset,
 	type RepairPresetId,
 	type SeparationPresetId,
 	STEM_OUTPUTS,
-	getRepairPreset,
-	getSeparationPreset,
 } from "#/lib/stemmer-models";
-import type { ProcessProgressUpdate } from "#/lib/process-types";
 
 const PROJECT_ROOT = process.cwd();
 const RUNTIME_ROOT = path.join(PROJECT_ROOT, ".stemmer-runtime");
 const JOBS_ROOT = path.join(RUNTIME_ROOT, "jobs");
 const MODELS_ROOT = path.join(RUNTIME_ROOT, "models");
-const AUDIO_SEPARATOR_BIN = path.join(PROJECT_ROOT, ".venv/bin/audio-separator");
+const AUDIO_SEPARATOR_BIN = path.join(
+	PROJECT_ROOT,
+	".venv/bin/audio-separator"
+);
 const RUNTIME_PYTHON_BIN = path.join(PROJECT_ROOT, ".venv/bin/python");
 const MIN_SUPPORTED_PYTHON_MINOR = 11;
 const MAX_SUPPORTED_PYTHON_MINOR = 13;
 
 let runtimeValidationPromise: Promise<void> | null = null;
 
-type StemJobResult = {
+interface StemJobResult {
 	jobId: string;
-	sourceFileName: string;
 	outputs: Array<{
 		id: "vocals" | "instrumental";
 		fileName: string;
 		url: string;
 		label: string;
 	}>;
-};
-
-type RepairJobResult = {
-	jobId: string;
 	sourceFileName: string;
+}
+
+interface RepairJobResult {
+	jobId: string;
+	modelsUsed: string[];
 	outputFileName: string;
 	outputUrl: string;
-	modelsUsed: string[];
-};
+	sourceFileName: string;
+}
 
 export async function runStemJob(args: {
 	file: File;
@@ -67,7 +70,10 @@ export async function runStemJob(args: {
 	const job = await createJobDir();
 	const inputPath = path.join(job.dir, sanitizeFileName(args.file.name));
 	await writeFile(inputPath, Buffer.from(await args.file.arrayBuffer()));
-	emitProgress({ progress: 6, label: "Source audio ready. Starting separator..." });
+	emitProgress({
+		progress: 6,
+		label: "Source audio ready. Starting separator...",
+	});
 
 	await runAudioSeparator({
 		modelFilenames: preset.modelFilenames,
@@ -80,7 +86,7 @@ export async function runStemJob(args: {
 	const audioFiles = await listAudioFiles(job.dir);
 	const stemCandidates = getGeneratedStemCandidates(
 		audioFiles,
-		path.basename(inputPath),
+		path.basename(inputPath)
 	);
 	const outputs = STEM_OUTPUTS.map((stem) => {
 		const fileName = findStemOutputFile(stemCandidates, stem.id);
@@ -120,7 +126,10 @@ export async function runRepairJob(args: {
 	const job = await createJobDir();
 	const inputPath = path.join(job.dir, sanitizeFileName(args.file.name));
 	await writeFile(inputPath, Buffer.from(await args.file.arrayBuffer()));
-	emitProgress({ progress: 6, label: "Source vocal ready. Starting repair..." });
+	emitProgress({
+		progress: 6,
+		label: "Source vocal ready. Starting repair...",
+	});
 
 	let currentInputPath = inputPath;
 	const modelsUsed: string[] = [];
@@ -159,7 +168,9 @@ export async function runRepairJob(args: {
 		]);
 
 		if (!selectedOutput) {
-			throw new Error(`Repair step ${step.modelLabel} did not produce ${step.targetStem}.`);
+			throw new Error(
+				`Repair step ${step.modelLabel} did not produce ${step.targetStem}.`
+			);
 		}
 
 		currentInputPath = path.join(stepDir, selectedOutput);
@@ -340,8 +351,8 @@ async function spawnSeparator(args: {
 			reject(
 				new Error(
 					output.trim() ||
-						`audio-separator failed with exit code ${code} for ${args.modelFilename}`,
-				),
+						`audio-separator failed with exit code ${code} for ${args.modelFilename}`
+				)
 			);
 		});
 	});
@@ -366,7 +377,9 @@ function getModelArgs(modelFilename: string) {
 async function listAudioFiles(dir: string) {
 	const entries = await readdir(dir, { withFileTypes: true });
 	return entries
-		.filter((entry) => entry.isFile() && /\.(wav|flac|mp3|m4a)$/i.test(entry.name))
+		.filter(
+			(entry) => entry.isFile() && /\.(wav|flac|mp3|m4a)$/i.test(entry.name)
+		)
 		.map((entry) => entry.name);
 }
 
@@ -385,10 +398,10 @@ function normalizeStemToken(value: string) {
 
 export function getGeneratedStemCandidates(
 	files: string[],
-	sourceFileName: string,
+	sourceFileName: string
 ) {
 	return files.filter(
-		(fileName) => path.basename(fileName) !== path.basename(sourceFileName),
+		(fileName) => path.basename(fileName) !== path.basename(sourceFileName)
 	);
 }
 
@@ -419,7 +432,7 @@ function getStemAliases(stemId: "vocals" | "instrumental") {
 
 export function findStemOutputFile(
 	files: string[],
-	stemId: "vocals" | "instrumental",
+	stemId: "vocals" | "instrumental"
 ) {
 	const positiveTerms = getStemAliases(stemId);
 	const negativeTerms = getConflictingStemAliases(stemId);
@@ -445,7 +458,7 @@ function getConflictingStemAliases(stemId: "vocals" | "instrumental") {
 function scoreStemCandidate(
 	fileName: string,
 	positiveTerms: string[],
-	negativeTerms: string[],
+	negativeTerms: string[]
 ) {
 	const compactName = normalizeStemToken(fileName);
 	const tokens = tokenizeStemName(fileName);
@@ -468,7 +481,7 @@ function scoreStemAlias(
 	compactName: string,
 	tokens: string[],
 	compactWeight: number,
-	tokenWeight: number,
+	tokenWeight: number
 ) {
 	const normalizedTerm = normalizeStemToken(term);
 	if (!normalizedTerm) {
@@ -524,7 +537,7 @@ async function validateRuntime() {
 		await access(RUNTIME_PYTHON_BIN, constants.X_OK);
 	} catch {
 		throw new Error(
-			"Separator runtime missing. Recreate `.venv` and install `audio-separator` before running jobs.",
+			"Separator runtime missing. Recreate `.venv` and install `audio-separator` before running jobs."
 		);
 	}
 
@@ -535,7 +548,7 @@ async function validateRuntime() {
 		version.minor > MAX_SUPPORTED_PYTHON_MINOR
 	) {
 		throw new Error(
-			`Unsupported Python runtime ${version.major}.${version.minor}. Recreate \`.venv\` with Python 3.11, 3.12, or 3.13.`,
+			`Unsupported Python runtime ${version.major}.${version.minor}. Recreate \`.venv\` with Python 3.11, 3.12, or 3.13.`
 		);
 	}
 }
@@ -561,7 +574,7 @@ async function readPythonVersion() {
 			{
 				cwd: PROJECT_ROOT,
 				env: process.env,
-			},
+			}
 		);
 
 		let stdout = "";
@@ -580,8 +593,9 @@ async function readPythonVersion() {
 			if (code !== 0) {
 				reject(
 					new Error(
-						stderr.trim() || `Failed to inspect Python runtime with exit code ${code}`,
-					),
+						stderr.trim() ||
+							`Failed to inspect Python runtime with exit code ${code}`
+					)
 				);
 				return;
 			}
@@ -638,15 +652,23 @@ function buildOutputUrl(jobId: string, fileName: string) {
 }
 
 function getContentType(filePath: string) {
-	if (filePath.endsWith(".wav")) return "audio/wav";
-	if (filePath.endsWith(".flac")) return "audio/flac";
-	if (filePath.endsWith(".mp3")) return "audio/mpeg";
-	if (filePath.endsWith(".m4a")) return "audio/mp4";
+	if (filePath.endsWith(".wav")) {
+		return "audio/wav";
+	}
+	if (filePath.endsWith(".flac")) {
+		return "audio/flac";
+	}
+	if (filePath.endsWith(".mp3")) {
+		return "audio/mpeg";
+	}
+	if (filePath.endsWith(".m4a")) {
+		return "audio/mp4";
+	}
 	return "application/octet-stream";
 }
 
 function createProgressEmitter(
-	onProgress?: (update: ProcessProgressUpdate) => void,
+	onProgress?: (update: ProcessProgressUpdate) => void
 ) {
 	if (!onProgress) {
 		return () => {};
@@ -693,11 +715,17 @@ function parseSeparatorProgress(rawLine: string): ProcessProgressUpdate | null {
 		return { progress: 30, label: "Loading separation model..." };
 	}
 
-	if (/initialisation complete/i.test(line) || /Load model duration:/i.test(line)) {
+	if (
+		/initialisation complete/i.test(line) ||
+		/Load model duration:/i.test(line)
+	) {
 		return { progress: 40, label: "Model ready. Running separation..." };
 	}
 
-	if (/Processing file:/i.test(line) || /Starting separation process/i.test(line)) {
+	if (
+		/Processing file:/i.test(line) ||
+		/Starting separation process/i.test(line)
+	) {
 		return { progress: 46, label: "Separating stems..." };
 	}
 

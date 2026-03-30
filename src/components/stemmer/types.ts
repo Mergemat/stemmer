@@ -6,30 +6,30 @@ import {
 	type StemOutputId,
 } from "#/lib/stemmer-models";
 
-export type TrackRecord = {
-	id: string;
-	name: string;
-	size: number;
+export interface TrackRecord {
 	duration: number;
+	id: string;
+	lanePeaks: Record<StemOutputId, number[]>;
+	name: string;
 	peaks: number[];
+	size: number;
 	sourceFile: File;
 	sourceUrl: string;
-	stemUrls: Partial<Record<StemOutputId, string>>;
 	stemBuffers: Partial<Record<StemOutputId, AudioBuffer>>;
-	lanePeaks: Record<StemOutputId, number[]>;
-};
+	stemUrls: Partial<Record<StemOutputId, string>>;
+}
 
-export type SeparationJob = {
+export interface SeparationJob {
+	label: string;
 	phase: "idle" | "running" | "complete";
 	progress: number;
-	label: string;
-};
+}
 
-export type CachedTrackRecord = {
+export interface CachedTrackRecord {
 	name: string;
 	presetId: SeparationPresetId;
 	stems: Record<StemOutputId, StemState>;
-};
+}
 
 export const CACHE_KEY = "stemmer-vite-shell-cache-v1";
 

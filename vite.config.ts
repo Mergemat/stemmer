@@ -20,7 +20,7 @@ const config = defineConfig({
 						babel: {
 							plugins: ["babel-plugin-react-compiler"],
 						},
-					},
+					}
 		),
 	],
 	resolve: {

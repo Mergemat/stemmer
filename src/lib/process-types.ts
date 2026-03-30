@@ -1,48 +1,48 @@
 import type { StemOutputId } from "#/lib/stemmer-models";
 
-export type StemProcessResult = {
-	mode: "stem";
+export interface StemProcessResult {
 	jobId: string;
-	sourceFileName: string;
+	mode: "stem";
 	outputs: Array<{
 		id: StemOutputId;
 		fileName: string;
 		url: string;
 		label: string;
 	}>;
-};
-
-export type RepairProcessResult = {
-	mode: "repair";
-	jobId: string;
 	sourceFileName: string;
+}
+
+export interface RepairProcessResult {
+	jobId: string;
+	mode: "repair";
+	modelsUsed: string[];
 	outputFileName: string;
 	outputUrl: string;
-	modelsUsed: string[];
-};
+	sourceFileName: string;
+}
 
 export type ProcessResult = StemProcessResult | RepairProcessResult;
 
-export type ProcessProgressUpdate = {
-	progress: number;
+export interface ProcessProgressUpdate {
 	label: string;
-};
+	progress: number;
+}
 
-export type ProcessStatusEvent = {
+export interface ProcessStatusEvent {
+	label: string;
+	progress: number;
 	type: "status";
-	progress: number;
-	label: string;
-};
+}
 
-export type ProcessCompleteEvent = {
-	type: "complete";
+export interface ProcessCompleteEvent {
 	payload: ProcessResult;
-};
+	type: "complete";
+}
 
-export type ProcessErrorEvent = {
-	type: "error";
+export interface ProcessErrorEvent {
 	error: string;
-};
+	type: "error";
+}
 
 export type ProcessStreamEvent =
 	| ProcessStatusEvent
