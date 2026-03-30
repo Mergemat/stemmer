@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "dist-electron/main.cjs",
   "packageManager": "bun@1.3.9",
   "engines": {
     "bun": ">=1.3.9"
@@ -11,16 +12,25 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "vite dev --port 3000",
-    "build": "vite build",
-    "preview": "vite preview",
+    "dev": "bun run dev:electron",
+    "dev:renderer": "vite dev --host 127.0.0.1 --port 3000 --strictPort",
+    "dev:electron": "bun run scripts/dev-electron.ts",
+    "build": "bun run build:renderer && bun run build:electron && bun run build:worker",
+    "build:ci": "bun run build:renderer && bun run build:electron",
+    "build:renderer": "vite build",
+    "build:electron": "bun build --target=node --format=cjs --external electron --outfile dist-electron/main.cjs ./electron/main.ts && bun build --target=node --format=cjs --external electron --outfile dist-electron/preload.cjs ./electron/preload.ts",
+    "build:worker": "bun run scripts/build-worker-binary.ts",
+    "prepare:desktop-assets": "bun run scripts/prepare-desktop-assets.ts",
+    "preview:renderer": "vite preview --host 127.0.0.1 --port 3000",
+    "electron": "bun run build:electron && bun x electron .",
+    "dist": "bun run build && bun x electron-builder",
     "setup:runtime": "bun run scripts/setup-runtime.ts",
     "runtime:doctor": "bun run scripts/runtime-doctor.ts",
     "test": "vitest run",
     "check": "ultracite check",
     "lint": "bun run check",
     "typecheck": "bunx tsc --noEmit",
-    "ci": "bun run lint && bun run typecheck && bun run test && bun run build",
+    "ci": "bun run lint && bun run typecheck && bun run test && bun run build:ci",
     "fix": "ultracite fix"
   },
   "dependencies": {
@@ -31,8 +41,6 @@
     "@tanstack/react-query-devtools": "latest",
     "@tanstack/react-router": "latest",
     "@tanstack/react-router-devtools": "latest",
-    "@tanstack/react-router-ssr-query": "latest",
-    "@tanstack/react-start": "latest",
     "@tanstack/router-plugin": "^1.132.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -58,6 +66,8 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.1.4",
     "babel-plugin-react-compiler": "^1.0.0",
+    "electron": "^37.5.0",
+    "electron-builder": "^26.0.12",
     "jsdom": "^28.1.0",
     "react-scan": "^0.5.3",
     "typescript": "^5.7.2",
@@ -71,5 +81,42 @@
       "esbuild",
       "lightningcss"
     ]
+  },
+  "build": {
+    "appId": "dev.bomarov.stemmer",
+    "productName": "Stemmer",
+    "directories": {
+      "output": "release-output"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "worker-dist/stemmer-worker",
+        "to": "worker"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "identity": null,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "signIgnore": [
+        "Python\\.framework($|/)"
+      ]
+    },
+    "dmg": {
+      "writeUpdateInfo": false
+    }
   }
 }

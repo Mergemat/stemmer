@@ -9,8 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    name: Build And Release
+  validate:
+    name: Validate
     runs-on: ubuntu-latest
 
     steps:
@@ -38,17 +38,82 @@ jobs:
         run: |
           test "${GITHUB_REF_NAME}" = "v${{ steps.package.outputs.version }}"
 
-      - name: Package production build
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+
+  build-mac:
+    name: Build macOS (${{ matrix.arch }})
+    needs: validate
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-latest
+          - arch: x64
+            runner: macos-13
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.9
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Create Python virtualenv and install dependencies
         run: |
-          VERSION="${{ steps.package.outputs.version }}"
-          mkdir -p release-assets
-          tar -czf "release-assets/stemmer-${VERSION}-web-build.tar.gz" dist
-          sha256sum "release-assets/stemmer-${VERSION}-web-build.tar.gz" > "release-assets/stemmer-${VERSION}-web-build.tar.gz.sha256"
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install "audio-separator==0.44.1" onnxruntime
+
+      - name: Install Node dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build renderer and electron
+        run: |
+          bun run build:renderer
+          bun run build:electron
+
+      - name: Build worker binary (PyInstaller)
+        run: bun run build:worker
+
+      - name: Build macOS .dmg
+        run: bun x electron-builder --mac --${{ matrix.arch }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: stemmer-mac-${{ matrix.arch }}
+          path: |
+            release-output/*.dmg
+          if-no-files-found: error
+
+  publish:
+    name: Publish Release
+    needs: [validate, build-mac]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: List release assets
+        run: ls -lh release-assets/
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            release-assets/*.tar.gz
-            release-assets/*.sha256
+          files: release-assets/*
           generate_release_notes: true
