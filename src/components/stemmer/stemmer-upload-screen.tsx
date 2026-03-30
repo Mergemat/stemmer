@@ -1,14 +1,21 @@
 import { useAtomValue } from "jotai";
-import { Keyboard, Mic, Music4, Upload, Zap } from "lucide-react";
+import { Keyboard, Upload } from "lucide-react";
 import type { ChangeEvent } from "react";
 import { Button } from "#/components/ui/button";
-import { isDecodingAtom, isDraggingAtom } from "./stemmer-atoms";
+import type { SeparationPresetId } from "#/lib/stemmer-models";
+import {
+	isDecodingAtom,
+	isDraggingAtom,
+	selectedPresetIdAtom,
+} from "./stemmer-atoms";
 import { useStemmerActions } from "./stemmer-provider";
+import { MODEL_PRESETS } from "./types";
 
 export default function StemmerUploadScreen() {
 	const isDecoding = useAtomValue(isDecodingAtom);
 	const isDragging = useAtomValue(isDraggingAtom);
-	const { importFile } = useStemmerActions();
+	const selectedPresetId = useAtomValue(selectedPresetIdAtom);
+	const { importFile, selectPreset } = useStemmerActions();
 
 	async function handleImport(event: ChangeEvent<HTMLInputElement>) {
 		const file = event.target.files?.[0];
@@ -26,6 +33,39 @@ export default function StemmerUploadScreen() {
 			className="flex h-dvh flex-col items-center justify-center bg-background px-4"
 		>
 			<div className="flex w-full max-w-lg flex-col items-center gap-10">
+				{/* Mode selector */}
+				{!isDecoding && (
+					<div className="flex w-full animate-fade-in flex-col items-center gap-3">
+						<span className="font-medium text-muted-foreground text-xs uppercase tracking-wider">
+							Mode
+						</span>
+						<div className="flex w-full max-w-sm items-stretch gap-2">
+							{MODEL_PRESETS.map((preset) => (
+								<button
+									className={`relative flex flex-1 flex-col items-center gap-1.5 rounded-xl px-4 py-3.5 text-center transition-all duration-150 ${
+										preset.id === selectedPresetId
+											? "bg-primary/12 text-foreground ring-1 ring-primary/40"
+											: "bg-card/50 text-muted-foreground hover:bg-card hover:text-foreground"
+									}`}
+									key={preset.id}
+									onClick={() => selectPreset(preset.id as SeparationPresetId)}
+									type="button"
+								>
+									<span className="font-semibold text-sm">{preset.label}</span>
+									<span className="text-[11px] leading-tight opacity-70">
+										{preset.description}
+									</span>
+									{preset.id === "fast" && (
+										<span className="absolute -top-1.5 right-2 rounded-full bg-primary/15 px-1.5 py-px font-medium text-[9px] text-primary">
+											default
+										</span>
+									)}
+								</button>
+							))}
+						</div>
+					</div>
+				)}
+
 				{/* Drop zone */}
 				<div
 					className={`flex w-full flex-col items-center rounded-2xl border-2 border-dashed px-8 py-14 text-center transition-all duration-200 ${
@@ -71,27 +111,6 @@ export default function StemmerUploadScreen() {
 					)}
 				</div>
 
-				{/* Feature hints */}
-				{!isDecoding && (
-					<div className="grid w-full animate-fade-in grid-cols-3 gap-3">
-						<FeatureHint
-							description="AI isolates vocals and instruments"
-							icon={<Zap className="size-4" />}
-							title="Separate"
-						/>
-						<FeatureHint
-							description="Listen to each stem independently"
-							icon={<Mic className="size-4" />}
-							title="Preview"
-						/>
-						<FeatureHint
-							description="Export stems as high-quality audio"
-							icon={<Music4 className="size-4" />}
-							title="Export"
-						/>
-					</div>
-				)}
-
 				{/* Keyboard shortcuts hint */}
 				{!isDecoding && (
 					<div
@@ -102,34 +121,14 @@ export default function StemmerUploadScreen() {
 						<span>
 							<Kbd>Space</Kbd> play/pause
 							<span className="mx-1.5">·</span>
-							<Kbd>Enter</Kbd> separate
+							<Kbd>1-3</Kbd> mode
 							<span className="mx-1.5">·</span>
-							<Kbd>1-4</Kbd> presets
+							Drop file to start
 						</span>
 					</div>
 				)}
 			</div>
 		</section>
-	);
-}
-
-function FeatureHint({
-	description,
-	icon,
-	title,
-}: {
-	description: string;
-	icon: React.ReactNode;
-	title: string;
-}) {
-	return (
-		<div className="flex flex-col items-center gap-2 rounded-xl bg-card/40 px-3 py-4 text-center">
-			<span className="text-muted-foreground">{icon}</span>
-			<span className="font-medium text-foreground text-xs">{title}</span>
-			<span className="text-[11px] text-muted-foreground/70 leading-tight">
-				{description}
-			</span>
-		</div>
 	);
 }
 

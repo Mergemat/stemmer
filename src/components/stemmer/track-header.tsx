@@ -58,8 +58,8 @@ export default function TrackHeader() {
 	}
 
 	return (
-		<div className="flex shrink-0 items-center gap-3 border-border/60 border-b bg-card px-4 py-2.5 shadow-[0_1px_4px_rgba(0,0,0,0.1)]">
-			<div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+		<div className="flex shrink-0 items-center gap-3 border-border/60 border-b bg-card px-4 py-1.5 shadow-[0_1px_4px_rgba(0,0,0,0.1)]">
+			<div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10">
 				<Music className="size-4 text-primary" />
 			</div>
 

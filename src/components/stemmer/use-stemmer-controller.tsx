@@ -170,6 +170,9 @@ export function useStemmerController(): StemmerActions {
 				progress: 0,
 				label: "Ready to separate.",
 			});
+
+			// Auto-start separation after import
+			runPreview().catch(() => undefined);
 		} catch (error) {
 			if (sourceUrl) {
 				URL.revokeObjectURL(sourceUrl);

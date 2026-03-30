@@ -54,7 +54,7 @@ const StemSidebarRow = memo(function StemSidebarRow({
 			<Slider
 				className={`w-full ${isMuted ? "opacity-30" : ""}`}
 				disabled={disabled}
-				max={120}
+				max={100}
 				min={0}
 				onValueChange={([v]) => onPatchStem(stem.id, { gain: (v ?? 0) / 100 })}
 				step={1}

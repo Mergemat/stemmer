@@ -44,12 +44,12 @@ export default function WaveformLanes() {
 
 	return (
 		<div className="flex min-w-0 flex-1 flex-col">
-			<div className="relative flex h-7 shrink-0 items-end border-border/60 border-b bg-surface px-0">
-				<div className="w-[140px] shrink-0" />
+			<div className="relative flex h-5 shrink-0 items-end border-border/60 border-b bg-surface px-0">
+				<div className="w-[120px] shrink-0" />
 				<div className="relative min-w-0 flex-1">
 					{markers.map((marker) => (
 						<span
-							className="absolute pb-1.5 font-mono text-[11px] text-muted-foreground/70 uppercase tracking-widest"
+							className="absolute pb-1 font-mono text-[10px] text-muted-foreground/70 uppercase tracking-widest"
 							key={marker.position}
 							style={{
 								left: `${marker.position}%`,
@@ -104,11 +104,11 @@ const WaveformLane = memo(function WaveformLane({
 
 	return (
 		<div
-			className="relative flex min-h-0 flex-1 select-none border-border/40 border-b last:border-b-0"
+			className="relative flex h-[72px] shrink-0 select-none border-border/40 border-b last:border-b-0"
 			style={{ touchAction: "none" }}
 		>
 			<div
-				className={`flex w-[140px] shrink-0 flex-col justify-center gap-2 border-border/40 border-r bg-card px-3 py-2.5 transition-opacity ${disabled ? "opacity-40" : ""}`}
+				className={`flex w-[120px] shrink-0 flex-col justify-center gap-1.5 border-border/40 border-r bg-card px-2.5 py-1.5 transition-opacity ${disabled ? "opacity-40" : ""}`}
 			>
 				<div className="flex items-center gap-1.5">
 					<span style={{ color: accent }}>{STEM_ICONS[stemId]}</span>
@@ -117,7 +117,7 @@ const WaveformLane = memo(function WaveformLane({
 					</span>
 				</div>
 
-				<div className="flex items-center gap-2">
+				<div className="flex items-center gap-1.5">
 					<Slider
 						className={`min-w-0 flex-1 ${isMuted ? "opacity-30" : ""}`}
 						disabled={disabled}
@@ -127,14 +127,14 @@ const WaveformLane = memo(function WaveformLane({
 						step={1}
 						value={[gainPercent]}
 					/>
-					<span className="w-7 text-right font-mono text-[10px] text-muted-foreground tabular-nums">
+					<span className="w-6 text-right font-mono text-[10px] text-muted-foreground tabular-nums">
 						{isMuted ? "Off" : `${gainPercent}`}
 					</span>
 				</div>
 
 				<div className="flex items-center gap-1">
 					<button
-						className={`flex h-5 w-6 items-center justify-center rounded font-bold text-[10px] transition-colors ${
+						className={`flex h-4 w-5 items-center justify-center rounded font-bold text-[10px] transition-colors ${
 							state.muted
 								? "bg-red-500/20 text-red-400"
 								: "bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground"
@@ -147,7 +147,7 @@ const WaveformLane = memo(function WaveformLane({
 						M
 					</button>
 					<button
-						className={`flex h-5 w-6 items-center justify-center rounded font-bold text-[10px] transition-colors ${
+						className={`flex h-4 w-5 items-center justify-center rounded font-bold text-[10px] transition-colors ${
 							state.solo
 								? "text-primary-foreground"
 								: "bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground"
